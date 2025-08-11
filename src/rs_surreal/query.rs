@@ -572,7 +572,6 @@ pub(crate) async fn get_named_attmap_with_uda(
     //获得uda的 map
     let o: surrealdb::Value = response.take(0)?;
     let mut named_attmap: NamedAttrMap = o.into_inner().into();
-    // dbg!(&named_attmap);
     let o: surrealdb::Value = response.take(1)?;
     let array: Vec<SurlValue> = o.into_inner().try_into().unwrap();
     let uda_kvs: Vec<surrealdb::sql::Object> =

@@ -24,7 +24,7 @@ use aios_core::room::room::load_aabb_tree;
 
 #[test]
 fn get_noun_hash() {
-    let noun = "SCOM";
+    let noun = "CAP";
     let hash = db1_hash(noun);
     dbg!(hash);
     let noun = "WELDTY";

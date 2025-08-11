@@ -4,7 +4,7 @@ use crate::material::gps::save_gps_material_dzcl;
 use crate::material::gy::{save_gy_material_dzcl, save_gy_material_equi, save_gy_material_valv};
 use crate::material::nt::save_nt_material_dzcl;
 use crate::material::sb::save_sb_material_dzcl;
-use crate::material::tf::save_tf_material_hvac;
+use crate::material::tf::{define_tf_surreal_functions, save_tf_material_hvac};
 use crate::material::tx::save_tx_material_equi;
 use crate::material::yk::{save_yk_material_dzcl, save_yk_material_equi, save_yk_material_pipe};
 use crate::pdms_user::RefnoMajor;
@@ -102,6 +102,7 @@ pub async fn save_all_material_data() -> anyhow::Result<()> {
         dbg!(e.to_string());
         return Ok(());
     }
+    define_tf_surreal_functions(&SUL_DB).await;
     let mut handles = Vec::new();
     // 查找所有带专业的site
     let sites = query_all_site_with_major().await?;
@@ -109,7 +110,7 @@ pub async fn save_all_material_data() -> anyhow::Result<()> {
     for site in sites {
         dbg!(&site.id);
         let refno = site.id;
-        if site.major != "V".to_string() { continue; };
+        // if site.major != "V".to_string() { continue; };
         match site.major.as_str() {
             // 工艺
             "T" => {

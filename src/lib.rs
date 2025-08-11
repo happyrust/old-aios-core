@@ -103,6 +103,8 @@ pub mod dblist;
 
 pub mod expression;
 
+pub mod export_data;
+
 pub use crate::types::*;
 pub use rs_surreal::*;
 

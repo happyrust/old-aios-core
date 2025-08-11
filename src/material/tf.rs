@@ -22,7 +22,6 @@ pub async fn save_tf_material_hvac(
 ) -> Vec<JoinHandle<()>> {
     let mut handles = Vec::new();
     let db = SUL_DB.clone();
-    define_tf_surreal_functions(&db).await;
     match get_tf_hvac_material(&db, vec![refno]).await {
         Ok(r) => {
             if r.is_empty() {
@@ -1033,7 +1032,7 @@ async fn get_tf_hvac_stif_data(
 
 
 /// 声明通风专业定义的方法
-async fn define_tf_surreal_functions(db: &Surreal<Any>) -> anyhow::Result<()> {
+pub async fn define_tf_surreal_functions(db: &Surreal<Any>) -> anyhow::Result<()> {
     let path = "rs_surreal/material_list/tf";
     let files = std::fs::read_dir(path)?;
     for file in files {
