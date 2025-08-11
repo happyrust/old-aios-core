@@ -8,7 +8,7 @@ use crate::{
 use anyhow::anyhow;
 use serde::{Deserialize, Serialize};
 use std::collections::{btree_map::BTreeMap, HashSet};
-use surrealdb::sql::Thing;
+use surrealdb::sql::{Datetime, Thing};
 
 pub async fn export_surreal_data(
     refno: RefU64,
@@ -399,8 +399,8 @@ struct InstRelate {
     pub generic: String,
     pub has_cata_neg: bool,
     pub solid: bool,
-    pub zone_refno: Thing,
-    pub dt: surrealdb::sql::Datetime,
+    pub zone_refno: Option<Thing>,
+    pub dt: Option<surrealdb::sql::Datetime>,
 }
 
 impl InstRelate {
@@ -421,7 +421,7 @@ impl InstRelate {
 
 fn export_inst_relate(relate: InstRelate) -> String {
     format!(
-            "INSERT IGNORE INTO inst_relate {{ id: {}, in: {}, out: {}, aabb: {}, world_trans: {}, generic: \"{}\", has_cata_neg: {}, solid: {}, zone_refno: {}, dt: {} }};",
+            "INSERT IGNORE INTO inst_relate {{ id: {}, in: {}, out: {}, aabb: {}, world_trans: {}, generic: \"{}\", has_cata_neg: {}, solid: {}, dt: {} }};",
             relate.id,
             relate.r#in,
             relate.out,
@@ -430,8 +430,7 @@ fn export_inst_relate(relate: InstRelate) -> String {
             relate.generic,
             relate.has_cata_neg,
             relate.solid,
-            relate.zone_refno,
-            relate.dt
+            relate.dt.unwrap_or(Datetime::default())
         )
 }
 
@@ -621,7 +620,7 @@ fn export_inst_info_record(row: &InstInfoRecord) -> String {
 async fn test_export_surreal_data() {
     init_test_surreal().await.unwrap();
     // 创建测试数据
-    let test_refno = RefU64::from("24383/66462");
+    let test_refno = RefU64::from("24383/66653");
     let aios_mgr = AiosDBMgr::init_from_db_option().await.unwrap();
 
     // 测试导出功能
