@@ -59,60 +59,44 @@ pub async fn export_surreal_data(
                 }
             }
             // tubi: 仅 BRAN 才有
-            dbg!(&pe.noun);
             if pe.noun == "BRAN" {
                 if let Ok(tubis) = TubiRelate::query_by_in_refno(refno.into()).await {
-                    dbg!(&tubis);
                     for t in tubis {
                         // 导出 tubi_relate 行
                         let tubi_sql = export_tubi_relate(&t);
-                        dbg!(&tubi_sql);
+                        // dbg!(&tubi_sql);
                         sqls.push(tubi_sql);
                         // 导出 aabb
                         if let Some(aabb_row) = AabbRecord::query_by_id(&t.aabb).await? {
                             let aabb_sql = export_aabb_record(&aabb_row);
-                            dbg!(&aabb_sql);
+                            // dbg!(&aabb_sql);
                             sqls.push(aabb_sql);
                         }
                         // 导出 trans
                         if let Some(trans_row) = TransRecord::query_by_id(&t.world_trans).await? {
                             let trans_sql = export_trans_record(&trans_row);
-                            dbg!(&trans_sql);
+                            // dbg!(&trans_sql);
                             sqls.push(trans_sql);
                         }
                         // 导出 inst_geo 记录（t.out 指向 inst_geo:⟨...⟩），并导出其中 aabb/pts 引用
                         if let Some(geo_row) = InstGeoRecord::query_by_id(&t.out).await? {
                             let geo_sql = export_inst_geo_record(&geo_row);
-                            dbg!(&geo_sql);
+                            // dbg!(&geo_sql);
                             sqls.push(geo_sql);
                             // aabb 字段（如果存在）
-                            // if let Some(aabb_val) =
-                            //     geo_row.fields.get("aabb").and_then(|v| v.as_str())
-                            // {
-                            //     let thing: Thing = aabb_val.parse().unwrap_or_else(|_| {
-                            //         ("aabb".to_string(), aabb_val.to_string()).into()
-                            //     });
-                            //     if let Some(aabb_row) = AabbRecord::query_by_id(&thing).await? {
-                            //         let aabb_sql = export_aabb_record(&aabb_row);
-                            //         sqls.push(aabb_sql);
-                            //     }
-                            // }
-                            // // pts 数组（vec3:⟨...⟩）
-                            // if let Some(pts_val) =
-                            //     geo_row.fields.get("pts").and_then(|v| v.as_array())
-                            // {
-                            //     for p in pts_val {
-                            //         if let Some(s) = p.as_str() {
-                            //             let thing: Thing = s.parse().unwrap_or_else(|_| {
-                            //                 ("vec3".to_string(), s.to_string()).into()
-                            //             });
-                            //             if let Some(vrow) = Vec3Record::query_by_id(&thing).await? {
-                            //                 let vsql = export_vec3_record(&vrow);
-                            //                 sqls.push(vsql);
-                            //             }
-                            //         }
-                            //     }
-                            // }
+                            if let Some(thing) = geo_row.aabb {
+                                if let Some(aabb_row) = AabbRecord::query_by_id(&thing).await? {
+                                    let aabb_sql = export_aabb_record(&aabb_row);
+                                    sqls.push(aabb_sql);
+                                }
+                            }
+                            // pts 数组（vec3:⟨...⟩）
+                            for thing in geo_row.pts {
+                                if let Some(vrow) = Vec3Record::query_by_id(&thing).await? {
+                                    let vsql = export_vec3_record(&vrow);
+                                    sqls.push(vsql);
+                                }
+                            }
                         }
                     }
                 }
@@ -533,7 +517,6 @@ impl InstGeoRecord {
     pub async fn query_by_id(id: &Thing) -> anyhow::Result<Option<InstGeoRecord>> {
         use crate::SUL_DB;
         let sql = format!("select * from {};", id);
-        dbg!(&sql);
         let mut response = SUL_DB.query(sql).await?;
         let mut rows: Vec<InstGeoRecord> = response.take(0)?;
         Ok(rows.pop())
@@ -541,7 +524,11 @@ impl InstGeoRecord {
 }
 
 fn export_inst_geo_record(row: &InstGeoRecord) -> String {
-    let aabb = row.aabb.clone().map(|t| t.to_string()).unwrap_or("NONE".into());
+    let aabb = row
+        .aabb
+        .clone()
+        .map(|t| t.to_string())
+        .unwrap_or("NONE".into());
     let pts = row
         .pts
         .iter()
