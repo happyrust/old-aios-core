@@ -1,3 +1,4 @@
+use crate::aios_db_mgr::aios_mgr::AiosDBMgr;
 use crate::basic::aabb::ParryAabb;
 use crate::pdms_types::PdmsGenericType;
 use crate::{get_inst_relate_keys, RefU64, RefnoEnum, SUL_DB};
@@ -359,17 +360,20 @@ mod tests {
     #[tokio::test]
     async fn test_query_insts_by_zone() -> anyhow::Result<()> {
         init_test_surreal().await;
-        
+
         // Test case: Query instances by zone
         let zone_refnos = vec!["24383_66457".into()];
         let result = query_insts_by_zone(&zone_refnos, false).await?;
-        
+
         // Verify the results
         assert!(!result.is_empty(), "Should return instances for the zone");
-        
+
         // Check the first instance has all required fields
         if let Some(first_inst) = result.first() {
-            assert!(first_inst.refno.to_string().len() > 0, "Should have valid refno");
+            assert!(
+                first_inst.refno.to_string().len() > 0,
+                "Should have valid refno"
+            );
             assert!(first_inst.insts.len() > 0, "Should have geometry instances");
         }
 

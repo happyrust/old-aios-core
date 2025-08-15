@@ -8,6 +8,7 @@ use crate::{
 use anyhow::anyhow;
 use serde::{Deserialize, Serialize};
 use std::collections::{btree_map::BTreeMap, HashSet};
+use std::io::Write;
 use surrealdb::sql::{Datetime, Thing};
 
 pub async fn export_surreal_data(
@@ -16,17 +17,17 @@ pub async fn export_surreal_data(
 ) -> anyhow::Result<Vec<String>> {
     let children = query_deep_children_refnos(refno.into()).await?;
     let mut sqls = Vec::new();
+    // 递归收集属性中的引用，并导出其树节点和属性（排除 id/refno/owner 的引用）
+    let mut visited: HashSet<RefU64> = HashSet::new();
+    visited.insert(refno);
+    // 递归收集属性中的引用，并导出其树节点和属性（排除 id/refno/owner 的引用）
+    // 使用显式栈避免 async 递归
+    let mut queue: Vec<RefU64> = Vec::new();
+    // 收集属性中的外键引用，并递归导出对应节点
     for refno in children {
         // 导出
         if let Some(pe) = get_pe(refno).await? {
-            let refno = refno.into();
-            // 递归收集属性中的引用，并导出其树节点和属性（排除 id/refno/owner 的引用）
-            let mut visited: HashSet<RefU64> = HashSet::new();
-            visited.insert(refno);
-            // 递归收集属性中的引用，并导出其树节点和属性（排除 id/refno/owner 的引用）
-            // 使用显式栈避免 async 递归
-            let mut queue: Vec<RefU64> = Vec::new();
-            // 收集属性中的外键引用，并递归导出对应节点
+            let refno:RefU64 = refno.into();
             // 树节点
             let tree_sql = export_tree_node(&pe);
             sqls.push(tree_sql);
@@ -41,11 +42,12 @@ pub async fn export_surreal_data(
                 Ok(attr) => {
                     let insert_sql = generate_attr_insert_sql(&pe, &attr);
                     sqls.push(insert_sql);
-                    for r in extract_refnos_from_attributes(&attr) {
-                        if r.0 != 0 && r.is_valid() && !visited.contains(&r) {
-                            queue.push(r);
-                        }
-                    }
+                    // for r in extract_refnos_from_attributes(&attr) {
+                    //     if r.0 != 0 && r.is_valid() && !visited.contains(&r) {
+                    //         visited.insert(r);
+                    //         queue.push(r);
+                    //     }
+                    // }
                 }
                 Err(e) => {
                     dbg!(&e.to_string());
@@ -101,35 +103,34 @@ pub async fn export_surreal_data(
                     }
                 }
             }
-            // 外部引用
-            while let Some(child_ref) = queue.pop() {
-                if !visited.insert(child_ref) {
-                    continue;
+        }
+    }
+    // 外部引用
+    dbg!(&queue);
+    while let Some(child_ref) = queue.pop() {
+        if let Some(child_pe) = get_pe(child_ref.into()).await? {
+            let child_tree_sql = export_tree_node(&child_pe);
+            // dbg!(&child_tree_sql);
+            sqls.push(child_tree_sql);
+            // 导出 child 的 owner 关系
+            if let Ok(child_rel) =
+                OwnerRelate::query_owner_relations_by_refno(child_ref.into()).await
+            {
+                if !child_rel.is_empty() {
+                    let relate_sql = export_owner_relate(child_rel[0].clone());
+                    // dbg!(&relate_sql);
+                    sqls.push(relate_sql);
                 }
-                if let Some(child_pe) = get_pe(child_ref.into()).await? {
-                    let child_tree_sql = export_tree_node(&child_pe);
-                    // dbg!(&child_tree_sql);
-                    sqls.push(child_tree_sql);
-                    // 导出 child 的 owner 关系
-                    if let Ok(child_rel) =
-                        OwnerRelate::query_owner_relations_by_refno(child_ref.into()).await
-                    {
-                        if !child_rel.is_empty() {
-                            let relate_sql = export_owner_relate(child_rel[0].clone());
-                            // dbg!(&relate_sql);
-                            sqls.push(relate_sql);
-                        }
-                    }
-                    // 导出 child 的属性，并将其中的外部引用加入队列
-                    if let Ok(child_attr) = get_all_attributes(&child_pe, aios_mgr).await {
-                        let child_attr_sql = generate_attr_insert_sql(&child_pe, &child_attr);
-                        // dbg!(&child_attr_sql);
-                        sqls.push(child_attr_sql);
-                        for r in extract_refnos_from_attributes(&child_attr) {
-                            if r.0 != 0 && r.is_valid() && !visited.contains(&r) {
-                                queue.push(r);
-                            }
-                        }
+            }
+            // 导出 child 的属性，并将其中的外部引用加入队列
+            if let Ok(child_attr) = get_all_attributes(&child_pe, aios_mgr).await {
+                let child_attr_sql = generate_attr_insert_sql(&child_pe, &child_attr);
+                // dbg!(&child_attr_sql);
+                sqls.push(child_attr_sql);
+                for r in extract_refnos_from_attributes(&child_attr) {
+                    if r.0 != 0 && r.is_valid() && !visited.contains(&r) {
+                        visited.insert(r);
+                        queue.push(r);
                     }
                 }
             }
@@ -163,7 +164,7 @@ fn export_tree_node(pe: &SPdmsElement) -> String {
 
 fn export_owner_relate(relate: OwnerRelate) -> String {
     format!(
-        "INSERT IGNORE INTO pe_owner {{ id: pe_owner:[{1}, {2}], in: {0}, out: {1} }}",
+        "INSERT RELATION INTO pe_owner {{ id: pe_owner:[{1}, {2}], in: {0}, out: {1} }}",
         relate.r#in, relate.id.0, relate.id.1
     )
 }
@@ -299,10 +300,12 @@ async fn get_inst_data(refno: &SPdmsElement, mut sqls: &mut Vec<String>) -> anyh
             // dbg!(&relate_sql);
             sqls.push(relate_sql);
             // 进一步导出 aabb 表记录
-            if let Some(aabb_row) = AabbRecord::query_by_id(&relate.aabb).await? {
-                let aabb_sql = export_aabb_record(&aabb_row);
-                // dbg!(&aabb_sql);
-                sqls.push(aabb_sql);
+            if let Some(aabb) = &relate.aabb {
+                if let Some(aabb_row) = AabbRecord::query_by_id(aabb).await? {
+                    let aabb_sql = export_aabb_record(&aabb_row);
+                    // dbg!(&aabb_sql);
+                    sqls.push(aabb_sql);
+                }
             }
             // 进一步导出 trans 表记录
             if let Some(trans_row) = TransRecord::query_by_id(&relate.world_trans).await? {
@@ -394,7 +397,7 @@ struct InstRelate {
     pub id: Thing,
     pub r#in: Thing,
     pub out: Thing,
-    pub aabb: Thing,
+    pub aabb: Option<Thing>,
     pub world_trans: Thing,
     pub generic: String,
     pub has_cata_neg: bool,
@@ -421,11 +424,11 @@ impl InstRelate {
 
 fn export_inst_relate(relate: InstRelate) -> String {
     format!(
-            "INSERT IGNORE INTO inst_relate {{ id: {}, in: {}, out: {}, aabb: {}, world_trans: {}, generic: \"{}\", has_cata_neg: {}, solid: {}, dt: {} }};",
-            relate.id,
+            "INSERT RELATION INTO inst_relate {{ id: {}, in: {}, out: {}, aabb: {}, world_trans: {}, generic: \"{}\", has_cata_neg: {}, solid: {}, dt: {} }};",
+            relate.id.clone(),
             relate.r#in,
             relate.out,
-            relate.aabb,
+            relate.aabb.unwrap_or(relate.id),
             relate.world_trans,
             relate.generic,
             relate.has_cata_neg,
@@ -471,7 +474,7 @@ fn export_tubi_relate(rel: &TubiRelate) -> String {
         format!("[{}]", s)
     };
     format!(
-        "INSERT IGNORE INTO tubi_relate {{ id: {}, in: {}, out: {}, aabb: {}, world_trans: {}, arrive: {}, leave: {}, bore_size: {} }};",
+        "INSERT RELATION INTO tubi_relate {{ id: {}, in: {}, out: {}, aabb: {}, world_trans: {}, arrive: {}, leave: {}, bore_size: {} }};",
         rel.id, rel.r#in, rel.out, rel.aabb, rel.world_trans, rel.arrive, rel.leave, bore
     )
 }
@@ -620,10 +623,15 @@ fn export_inst_info_record(row: &InstInfoRecord) -> String {
 async fn test_export_surreal_data() {
     init_test_surreal().await.unwrap();
     // 创建测试数据
-    let test_refno = RefU64::from("24383/66653");
+    let test_refno = RefU64::from("17414/26106");
     let aios_mgr = AiosDBMgr::init_from_db_option().await.unwrap();
 
     // 测试导出功能
     let sqls = export_surreal_data(test_refno, &aios_mgr).await.unwrap();
-    dbg!(&sqls.join(";"));
+    let sqls = sqls.join(";").into_bytes();
+    // 生成sql文件
+    let file_name = format!("{}_{}.txt",test_refno.get_0(),test_refno.get_1());
+    let mut file = std::fs::File::create(file_name.as_str()).unwrap();
+    file.write_all(&sqls).unwrap();
+
 }
