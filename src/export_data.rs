@@ -27,7 +27,7 @@ pub async fn export_surreal_data(
     for refno in children {
         // 导出
         if let Some(pe) = get_pe(refno).await? {
-            let refno:RefU64 = refno.into();
+            let refno: RefU64 = refno.into();
             // 树节点
             let tree_sql = export_tree_node(&pe);
             sqls.push(tree_sql);
@@ -58,6 +58,78 @@ pub async fn export_surreal_data(
                 Ok(_) => {}
                 Err(e) => {
                     dbg!(&e.to_string());
+                }
+            }
+
+            // 导出当前元素的 inst_relate 和 geo_relate（如果有的话）
+            let inst_relate = InstRelate::query_inst_relations_by_refno(refno.into()).await?;
+            for relate in inst_relate {
+                // 导出 inst_relate 本体
+                let relate_sql = export_inst_relate(relate.clone());
+                sqls.push(relate_sql);
+
+                // 导出相关的 aabb 表记录
+                if let Some(aabb) = &relate.aabb {
+                    if let Some(aabb_row) = AabbRecord::query_by_id(aabb).await? {
+                        let aabb_sql = export_aabb_record(&aabb_row);
+                        sqls.push(aabb_sql);
+                    }
+                }
+
+                // 导出相关的 trans 表记录
+                if let Some(trans_row) = TransRecord::query_by_id(&relate.world_trans).await? {
+                    let trans_sql = export_trans_record(&trans_row);
+                    sqls.push(trans_sql);
+                }
+
+                // 导出相关的 inst_info 表记录（out）
+                if let Some(info_row) = InstInfoRecord::query_by_id(&relate.out).await? {
+                    let info_sql = export_inst_info_record(&info_row);
+                    sqls.push(info_sql);
+
+                    // 导出geo_relate
+                    let geo_relates = GeoRelate::query_by_inst_info_id(&relate.out).await?;
+                    for geo_rel in geo_relates {
+                        // 导出 geo_relate 本体
+                        let geo_sql = export_geo_relate(&geo_rel);
+                        sqls.push(geo_sql);
+
+                        // 导出关联的 inst_geo 记录
+                        if let Some(geo_row) = InstGeoRecord::query_by_id(&geo_rel.out).await? {
+                            let geo_sql = export_inst_geo_record(&geo_row);
+                            sqls.push(geo_sql);
+
+                            // 导出 inst_geo 中的 aabb 字段（如果存在）
+                            if let Some(thing) = geo_row.aabb {
+                                if let Some(aabb_row) = AabbRecord::query_by_id(&thing).await? {
+                                    let aabb_sql = export_aabb_record(&aabb_row);
+                                    sqls.push(aabb_sql);
+                                }
+                            }
+
+                            // 导出 inst_geo 中的 pts 数组（vec3:⟨...⟩）
+                            for thing in geo_row.pts {
+                                if let Some(vrow) = Vec3Record::query_by_id(&thing).await? {
+                                    let vsql = export_vec3_record(&vrow);
+                                    sqls.push(vsql);
+                                }
+                            }
+                        }
+
+                        // 导出关联的 trans 记录
+                        if let Some(trans_row) = TransRecord::query_by_id(&geo_rel.trans).await? {
+                            let trans_sql = export_trans_record(&trans_row);
+                            sqls.push(trans_sql);
+                        }
+
+                        // 导出 pts 数组中的 vec3 记录
+                        for pt_thing in &geo_rel.pts {
+                            if let Some(vrow) = Vec3Record::query_by_id(pt_thing).await? {
+                                let vsql = export_vec3_record(&vrow);
+                                sqls.push(vsql);
+                            }
+                        }
+                    }
                 }
             }
             // tubi: 仅 BRAN 才有
@@ -318,6 +390,50 @@ async fn get_inst_data(refno: &SPdmsElement, mut sqls: &mut Vec<String>) -> anyh
                 let info_sql = export_inst_info_record(&info_row);
                 // dbg!(&info_sql);
                 sqls.push(info_sql);
+
+                // 导出geo_relate
+                let geo_relates = GeoRelate::query_by_inst_info_id(&relate.out).await?;
+                for geo_rel in geo_relates {
+                    // 导出 geo_relate 本体
+                    let geo_sql = export_geo_relate(&geo_rel);
+                    sqls.push(geo_sql);
+
+                    // 导出关联的 inst_geo 记录
+                    if let Some(geo_row) = InstGeoRecord::query_by_id(&geo_rel.out).await? {
+                        let geo_sql = export_inst_geo_record(&geo_row);
+                        sqls.push(geo_sql);
+
+                        // 导出 inst_geo 中的 aabb 字段（如果存在）
+                        if let Some(thing) = geo_row.aabb {
+                            if let Some(aabb_row) = AabbRecord::query_by_id(&thing).await? {
+                                let aabb_sql = export_aabb_record(&aabb_row);
+                                sqls.push(aabb_sql);
+                            }
+                        }
+
+                        // 导出 inst_geo 中的 pts 数组（vec3:⟨...⟩）
+                        for thing in geo_row.pts {
+                            if let Some(vrow) = Vec3Record::query_by_id(&thing).await? {
+                                let vsql = export_vec3_record(&vrow);
+                                sqls.push(vsql);
+                            }
+                        }
+                    }
+
+                    // 导出关联的 trans 记录
+                    if let Some(trans_row) = TransRecord::query_by_id(&geo_rel.trans).await? {
+                        let trans_sql = export_trans_record(&trans_row);
+                        sqls.push(trans_sql);
+                    }
+
+                    // 导出 pts 数组中的 vec3 记录
+                    for pt_thing in &geo_rel.pts {
+                        if let Some(vrow) = Vec3Record::query_by_id(pt_thing).await? {
+                            let vsql = export_vec3_record(&vrow);
+                            sqls.push(vsql);
+                        }
+                    }
+                }
             }
         }
 
@@ -509,7 +625,8 @@ struct InstGeoRecord {
     pub aabb: Option<Thing>,
     #[serde(default)]
     pub meshed: Option<bool>,
-    pub param: serde_json::Value,
+    #[serde(default)]
+    pub param: Option<serde_json::Value>,
     #[serde(default)]
     pub pts: Vec<Thing>,
 }
@@ -538,9 +655,14 @@ fn export_inst_geo_record(row: &InstGeoRecord) -> String {
         .collect::<Vec<_>>()
         .join(", ");
     let meshed = row.meshed.unwrap_or(false);
+    let param = row
+        .param
+        .as_ref()
+        .map(|p| p.to_string())
+        .unwrap_or("{}".to_string());
     format!(
         "INSERT IGNORE INTO inst_geo {{ id: {}, aabb: {}, meshed: {}, param: {}, pts: [{}] }};",
-        row.id, aabb, meshed, row.param, pts
+        row.id, aabb, meshed, param, pts
     )
 }
 
@@ -619,19 +741,55 @@ fn export_inst_info_record(row: &InstInfoRecord) -> String {
     format!("INSERT IGNORE INTO inst_info {{ {} }};", parts.join(", "))
 }
 
+#[derive(Serialize, Deserialize, Clone, Debug)]
+struct GeoRelate {
+    pub id: Thing,
+    pub r#in: Thing,
+    pub out: Thing,
+    pub geo_type: String,
+    pub geom_refno: Thing,
+    #[serde(default)]
+    pub pts: Vec<Thing>,
+    pub trans: Thing,
+    pub visible: bool,
+}
+
+impl GeoRelate {
+    /// 根据 inst_info ID 查询所有相关的 geo_relate 记录
+    pub async fn query_by_inst_info_id(inst_info_id: &Thing) -> anyhow::Result<Vec<GeoRelate>> {
+        use crate::SUL_DB;
+        let sql = format!("select * from {}->geo_relate;", inst_info_id);
+        let mut response = SUL_DB.query(sql).await?;
+        let rows: Vec<GeoRelate> = response.take(0)?;
+        Ok(rows)
+    }
+}
+
+fn export_geo_relate(rel: &GeoRelate) -> String {
+    let pts = rel
+        .pts
+        .iter()
+        .map(|t| t.to_string())
+        .collect::<Vec<_>>()
+        .join(", ");
+    format!(
+        "INSERT RELATION INTO geo_relate {{ id: {}, in: {}, out: {}, geo_type: \"{}\", geom_refno: {}, pts: [{}], trans: {}, visible: {} }};",
+        rel.id, rel.r#in, rel.out, rel.geo_type, rel.geom_refno, pts, rel.trans, rel.visible
+    )
+}
+
 #[tokio::test]
 async fn test_export_surreal_data() {
     init_test_surreal().await.unwrap();
     // 创建测试数据
-    let test_refno = RefU64::from("17414/26106");
+    let test_refno = RefU64::from("17414_26106");
     let aios_mgr = AiosDBMgr::init_from_db_option().await.unwrap();
 
     // 测试导出功能
     let sqls = export_surreal_data(test_refno, &aios_mgr).await.unwrap();
     let sqls = sqls.join(";").into_bytes();
     // 生成sql文件
-    let file_name = format!("{}_{}.txt",test_refno.get_0(),test_refno.get_1());
+    let file_name = format!("{}_{}.txt", test_refno.get_0(), test_refno.get_1());
     let mut file = std::fs::File::create(file_name.as_str()).unwrap();
     file.write_all(&sqls).unwrap();
-
 }
