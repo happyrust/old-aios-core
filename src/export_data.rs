@@ -14,9 +14,10 @@ use surrealdb::sql::{Datetime, Thing};
 pub async fn export_surreal_data(
     refno: RefU64,
     aios_mgr: &AiosDBMgr,
-) -> anyhow::Result<Vec<String>> {
+) -> anyhow::Result<(Vec<String>, HashSet<String>)> {
     let children = query_deep_children_refnos(refno.into()).await?;
     let mut sqls = Vec::new();
+    let mut meshes = HashSet::new();
     // 递归收集属性中的引用，并导出其树节点和属性（排除 id/refno/owner 的引用）
     let mut visited: HashSet<RefU64> = HashSet::new();
     visited.insert(refno);
@@ -90,10 +91,10 @@ pub async fn export_surreal_data(
                     // 导出geo_relate
                     let geo_relates = GeoRelate::query_by_inst_info_id(&relate.out).await?;
                     for geo_rel in geo_relates {
+                        meshes.insert(format!("{}.mesh",geo_rel.out.id.to_string().replace("⟨", "").replace("⟩", "")));
                         // 导出 geo_relate 本体
                         let geo_sql = export_geo_relate(&geo_rel);
                         sqls.push(geo_sql);
-
                         // 导出关联的 inst_geo 记录
                         if let Some(geo_row) = InstGeoRecord::query_by_id(&geo_rel.out).await? {
                             let geo_sql = export_inst_geo_record(&geo_row);
@@ -178,7 +179,6 @@ pub async fn export_surreal_data(
         }
     }
     // 外部引用
-    dbg!(&queue);
     while let Some(child_ref) = queue.pop() {
         if let Some(child_pe) = get_pe(child_ref.into()).await? {
             let child_tree_sql = export_tree_node(&child_pe);
@@ -208,7 +208,7 @@ pub async fn export_surreal_data(
             }
         }
     }
-    Ok(sqls)
+    Ok((sqls, meshes))
 }
 
 fn export_tree_node(pe: &SPdmsElement) -> String {
@@ -782,11 +782,11 @@ fn export_geo_relate(rel: &GeoRelate) -> String {
 async fn test_export_surreal_data() {
     init_test_surreal().await.unwrap();
     // 创建测试数据
-    let test_refno = RefU64::from("17414_26106");
+    let test_refno = RefU64::from("17414/24944");
     let aios_mgr = AiosDBMgr::init_from_db_option().await.unwrap();
 
     // 测试导出功能
-    let sqls = export_surreal_data(test_refno, &aios_mgr).await.unwrap();
+    let (sqls,_) = export_surreal_data(test_refno, &aios_mgr).await.unwrap();
     let sqls = sqls.join(";").into_bytes();
     // 生成sql文件
     let file_name = format!("{}_{}.txt", test_refno.get_0(), test_refno.get_1());

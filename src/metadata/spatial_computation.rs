@@ -1,3 +1,4 @@
+use glam::Vec3;
 use crate::RefnoEnum;
 
 // https://gitee.com/happydpc/rs-server/issues/IB8S8I
@@ -27,5 +28,11 @@ pub async fn get_bran_in_pcla(refno: RefnoEnum) -> anyhow::Result<RefnoEnum> {
 // https://gitee.com/happydpc/rs-server/issues/IB9YKZ
 /// 获取panel的长宽
 pub async fn get_panel_size(refno: RefnoEnum) -> anyhow::Result<[f32; 2]> {
+    todo!()
+}
+
+// https://gitee.com/happydpc/rs-server/issues/ICVZO1
+/// 支架与预埋板相对定位
+pub async fn get_positon_with_panel(refno: RefnoEnum) -> anyhow::Result<Vec3> {
     todo!()
 }
