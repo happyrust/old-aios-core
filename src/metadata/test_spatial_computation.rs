@@ -1,7 +1,7 @@
 use crate::metadata::spatial_computation::*;
 use crate::{init_test_surreal, RefU64, RefnoEnum};
-use std::str::FromStr;
 use glam::Vec3;
+use std::str::FromStr;
 
 #[tokio::test]
 async fn test_get_supp_panel() {
@@ -41,10 +41,10 @@ async fn test_get_bran_in_pcla() {
 #[tokio::test]
 async fn test_get_panel_size() {
     init_test_surreal().await;
-    let refno = RefU64::from_str("25688/47610").unwrap();
+    let refno = RefU64::from_str("24383_68574").unwrap();
     let size = get_panel_size(refno.into()).await.unwrap();
     dbg!(&size);
-    assert_eq!(size, [600.0,600.0]);
+    assert_eq!(size, [160.0, 50.0]);
 }
 
 #[tokio::test]
