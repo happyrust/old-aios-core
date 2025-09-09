@@ -102,13 +102,12 @@ pub struct DataCenterInstanceHH {
     pub attributes: Vec<DataCenterAttr>,
 }
 
-
 fn serialize_option_string_with_default<S>(
     value: &Option<String>,
     serializer: S,
 ) -> Result<S::Ok, S::Error>
-    where
-        S: serde::Serializer,
+where
+    S: serde::Serializer,
 {
     match value {
         Some(v) => serializer.serialize_str(v),
@@ -178,6 +177,7 @@ pub enum AttrValue {
     AttrMapFloat(HashMap<String, f32>),
     AttrMapFloatArray(HashMap<String, Vec<f32>>),
     AttrItemArray(Vec<ItemValue>),
+    AttrVecVecFloatMap(HashMap<String, Vec<Vec<f32>>>),
 }
 
 impl Default for AttrValue {
@@ -214,6 +214,9 @@ impl Into<String> for AttrValue {
                 serde_json::to_string(&a).unwrap_or("{}".to_string())
             }
             AttrValue::AttrItemArray(a) => serde_json::to_string(&a).unwrap_or("[]".to_string()),
+            AttrValue::AttrVecVecFloatMap(a) => {
+                serde_json::to_string(&a).unwrap_or("[]".to_string())
+            }
         }
     }
 }
@@ -662,7 +665,9 @@ pub struct DataCenterRecord {
 
 impl DataCenterRecord {
     pub fn get_insert_sql(refnos: HashMap<RefnoEnum, String>) -> String {
-        if refnos.is_empty() { return "".to_string(); };
+        if refnos.is_empty() {
+            return "".to_string();
+        };
         let data = refnos
             .into_iter()
             .map(|(refno, instance_code)| DataCenterRecord {
@@ -673,10 +678,15 @@ impl DataCenterRecord {
                 version: "".to_string(),
             })
             .collect::<Vec<DataCenterRecord>>();
-        data
-            .into_iter()
-            .map(|d| format!("upsert {} set instance_code = '{}' , status = '{:?}'",
-                             d.refno.to_table_key(DATACENTER_VERSION), d.instance_code, d.status))
+        data.into_iter()
+            .map(|d| {
+                format!(
+                    "upsert {} set instance_code = '{}' , status = '{:?}'",
+                    d.refno.to_table_key(DATACENTER_VERSION),
+                    d.instance_code,
+                    d.status
+                )
+            })
             .collect::<Vec<_>>()
             .join(";")
     }
