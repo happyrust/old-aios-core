@@ -31,6 +31,7 @@ use serde::{Deserialize, Serialize};
 use serde_with::serde_as;
 use serde_with::DisplayFromStr;
 use std::collections::{BTreeMap, HashMap};
+use anyhow::anyhow;
 use surrealdb::engine::any::Any;
 use surrealdb::sql::{Datetime, Value};
 use surrealdb::Surreal;
@@ -74,20 +75,35 @@ pub async fn get_default_name(refno: RefnoEnum) -> anyhow::Result<Option<String>
 #[cached(result = true)]
 pub async fn query_ancestor_refnos(refno: RefnoEnum) -> anyhow::Result<Vec<RefnoEnum>> {
     let sql = format!("return fn::ancestor({}).refno;", refno.to_pe_key());
-    let mut response = SUL_DB.query(sql).await?;
-    let s = response.take::<Vec<RefnoEnum>>(0);
-    Ok(s?)
+    match SUL_DB.query(&sql).await {
+        Ok(mut response) => {
+            match response.take::<Vec<Option<RefnoEnum>>>(0) {
+                Ok(s) => {
+                    let s = s.into_iter().filter_map(|s| s).collect::<Vec<RefnoEnum>>();
+                    Ok(s)
+                }
+                Err(e) => {
+                    dbg!(&sql);
+                    Err(anyhow!(e.to_string()))
+                }
+            }
+        }
+        Err(e) => {
+            dbg!(&sql);
+            Err(anyhow!(e.to_string()))
+        }
+    }
 }
 
 /// 查询指定类型的第一个祖先节点
-/// 
+///
 /// # 参数
 /// * `refno` - 要查询的refno
 /// * `ancestor_type` - 要查询的祖先节点类型
-/// 
+///
 /// # 返回值
 /// * `Option<RefnoEnum>` - 如果找到则返回对应的祖先节点refno,否则返回None
-/// 
+///
 /// # 错误
 /// * 如果查询失败会返回错误
 #[cached(result = true)]
@@ -104,13 +120,13 @@ pub async fn query_ancestor_of_type(refno: RefnoEnum, ancestor_type: String) -> 
 
 // #[cached(result = true)]
 /// 通过名称查询refno
-/// 
+///
 /// # 参数
 /// * `name` - 要查询的名称
-/// 
+///
 /// # 返回值
 /// * `Option<RefnoEnum>` - 如果找到则返回对应的refno,否则返回None
-/// 
+///
 /// # 错误
 /// * 如果查询失败会返回错误
 pub async fn get_refno_by_name(name: &str) -> anyhow::Result<Option<RefnoEnum>> {
@@ -125,13 +141,13 @@ pub async fn get_refno_by_name(name: &str) -> anyhow::Result<Option<RefnoEnum>> 
 }
 
 /// 获取指定refno的所有祖先节点的类型名称
-/// 
+///
 /// # 参数
 /// * `refno` - 要查询的refno
-/// 
+///
 /// # 返回值
 /// * `Vec<String>` - 祖先节点的类型名称列表
-/// 
+///
 /// # 错误
 /// * 如果查询失败会返回错误
 #[cached(result = true)]
@@ -163,10 +179,10 @@ pub async fn get_ancestor_attmaps(refno: RefnoEnum) -> anyhow::Result<Vec<NamedA
 }
 
 /// 获取指定refno的类型名称
-/// 
+///
 /// # 参数
 /// * `refno` - 要查询的refno
-/// 
+///
 /// # 返回值
 /// * `String` - 类型名称，如果未找到则返回"unset"
 #[cached(result = true)]
@@ -178,10 +194,10 @@ pub async fn get_type_name(refno: RefnoEnum) -> anyhow::Result<String> {
 }
 
 /// 批量获取多个refno的类型名称
-/// 
+///
 /// # 参数
 /// * `refnos` - refno迭代器
-/// 
+///
 /// # 返回值
 /// * `Vec<String>` - 类型名称列表
 pub async fn get_type_names(
@@ -823,17 +839,17 @@ pub async fn query_multi_children_refnos(refnos: &[RefnoEnum]) -> anyhow::Result
     // let refnos: Vec<RefnoEnum> = response.take(0)?;
     let mut final_refnos = vec![];
     for &refno in refnos {
-            match get_children_refnos(refno).await {
-                Ok(children) => {
-                    final_refnos.extend(children);
-                },
-                Err(e) => {
-                    eprintln!("获取子参考号时出错: refno={:?}, 错误: {:?}", refno, e);
-                    // 这里可以选择继续循环或返回错误
-                    return Err(e);  // 如果要中断并返回错误
-                    // 或者跳过此错误项，继续处理下一个
-                }
-            };
+        match get_children_refnos(refno).await {
+            Ok(children) => {
+                final_refnos.extend(children);
+            }
+            Err(e) => {
+                eprintln!("获取子参考号时出错: refno={:?}, 错误: {:?}", refno, e);
+                // 这里可以选择继续循环或返回错误
+                return Err(e);  // 如果要中断并返回错误
+                // 或者跳过此错误项，继续处理下一个
+            }
+        };
     }
     Ok(final_refnos)
 }
