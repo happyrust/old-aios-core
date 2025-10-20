@@ -59,7 +59,7 @@ pub struct DataCenterProjectWithRelationsHH {
     pub project_code: String,
     pub owner: String,
     pub instances: Vec<DataCenterInstanceHH>,
-    pub relations: Vec<DataCenterRelations>,
+    pub relations: Vec<DataCenterRelationsHH>,
 }
 
 // #[derive(Serialize, Deserialize, Clone, Debug, Default)]
@@ -138,6 +138,42 @@ pub struct DataCenterRelations {
 impl DataCenterRelations {
     pub fn new(start_instance: &DataCenterInstance, end_instance: &DataCenterInstance) -> Self {
         DataCenterRelations {
+            version: start_instance.version.clone(),
+            object_model_code: "RELAPOPO".to_string(),
+            instance_code: format!("RELAPOPO {}", start_instance.instance_code),
+            operate: None,
+            start_object_code: start_instance.object_model_code.clone(),
+            start_instance_code: start_instance.instance_code.clone(),
+            end_object_code: end_instance.object_model_code.clone(),
+            end_instance_code: end_instance.instance_code.clone(),
+            attributes: vec![],
+        }
+    }
+}
+
+#[derive(Serialize, Deserialize, Clone, Debug, Default)]
+pub struct DataCenterRelationsHH {
+    pub version: String,
+    #[serde(rename = "objectModelCode")]
+    pub object_model_code: String,
+    #[serde(rename = "instanceCode")]
+    pub instance_code: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub operate: Option<String>,
+    #[serde(rename = "startObjectCode")]
+    pub start_object_code: String,
+    #[serde(rename = "startInstanceCode")]
+    pub start_instance_code: String,
+    #[serde(rename = "endObjectCode")]
+    pub end_object_code: String,
+    #[serde(rename = "endInstanceCode")]
+    pub end_instance_code: String,
+    pub attributes: Vec<u8>,
+}
+
+impl DataCenterRelationsHH {
+    pub fn new(start_instance: &DataCenterInstanceHH, end_instance: &DataCenterInstanceHH) -> Self {
+        DataCenterRelationsHH {
             version: start_instance.version.clone(),
             object_model_code: "RELAPOPO".to_string(),
             instance_code: format!("RELAPOPO {}", start_instance.instance_code),
@@ -248,6 +284,8 @@ pub enum HoleType {
     STUCL,
     // 地漏类
     STUCM,
+    // 贯穿件
+    STUCD,
     Unknown,
 }
 
@@ -256,6 +294,9 @@ pub struct ThreeDDatacenterRequest {
     pub title: String,
     pub refnos: Vec<String>,
     pub create_rvm_relations: bool,
+    // 是否为初设
+    #[serde(default)]
+    pub b_first_time_design:bool,
 }
 
 #[derive(Serialize, Deserialize, Clone, Debug, Default)]
