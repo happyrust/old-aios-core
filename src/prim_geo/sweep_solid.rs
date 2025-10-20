@@ -665,7 +665,7 @@ impl BrepShapeTrait for SweepSolid {
         // dbg!(found_full_sann);
         let other_half_shape = if found_full_sann {
             let mut new_data = self.clone();
-            if let CateProfileParam::SANN(ref mut sann) = &mut new_data.profile {
+            if let CateProfileParam::SANN(sann) = &mut new_data.profile {
                 sann.pangle = -180.0;
             }
             // dbg!(&new_data);
