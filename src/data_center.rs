@@ -36,7 +36,7 @@ impl DataCenterProject {
     }
 }
 
-#[derive(Serialize, Deserialize, Clone, Debug, Default)]
+#[derive(Serialize, Deserialize, Clone, Debug, Default,Hash)]
 pub struct DataCenterProjectWithRelations {
     #[serde(rename = "projectCode")]
     pub project_code: String,
@@ -75,7 +75,7 @@ pub struct DataCenterProjectWithRelationsHH {
 // }
 
 // #[cfg(not(feature = "hd"))]
-#[derive(Serialize, Deserialize, Clone, Debug, Default)]
+#[derive(Serialize, Deserialize, Clone, Debug, Default,Hash)]
 pub struct DataCenterInstance {
     #[serde(rename = "objectModelCode")]
     pub object_model_code: String,
@@ -115,7 +115,7 @@ where
     }
 }
 
-#[derive(Serialize, Deserialize, Clone, Debug, Default)]
+#[derive(Serialize, Deserialize, Clone, Debug, Default,Hash)]
 pub struct DataCenterRelations {
     pub version: String,
     #[serde(rename = "objectModelCode")]
@@ -187,7 +187,7 @@ impl DataCenterRelationsHH {
     }
 }
 
-#[derive(Serialize, Deserialize, Clone, Debug, Default)]
+#[derive(Serialize, Deserialize, Clone, Debug, Default,Hash)]
 pub struct DataCenterAttr {
     #[serde(rename = "attributeModelCode")]
     pub attribute_model_code: String,
