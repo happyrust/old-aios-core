@@ -93,11 +93,11 @@ impl AiosDBMgr {
             refno.to_pe_key()
         );
         let mut response = SUL_DB.query(sql).await?;
-        let min: Vec<f32> = response.take(0).unwrap_or(vec![]);
-        let max: Vec<f32> = response.take(1).unwrap_or(vec![]);
-        let min = min.get(0).map_or(0.0, |x| *x);
-        let max = max.get(0).map_or(0.0, |x| *x);
-        Ok((min, max))
+        let top: Vec<f32> = response.take(0).unwrap_or(vec![]);
+        let bottom: Vec<f32> = response.take(1).unwrap_or(vec![]);
+        let top = top.get(0).map_or(0.0, |x| *x);
+        let bottom = bottom.get(0).map_or(0.0, |x| *x);
+        Ok((top, bottom))
     }
 
     /// 获取指定节点附近最近的 own_filter_types
