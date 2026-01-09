@@ -5,9 +5,9 @@ use crate::pdms_types::{EleTreeNode, PdmsElement};
 use crate::pe::SPdmsElement;
 use crate::table_const::{GLOBAL_DATABASE, PUHUA_MATERIAL_DATABASE};
 use crate::{
-    get_children_ele_nodes, get_db_option, get_named_attmap, get_named_attmap_with_uda,
-    get_next_prev, get_pe, get_world, get_world_transform, init_second_unit_surreal, AttrMap,
-    NamedAttrMap, RefU64, SurlValue, SUL_DB,
+    AttrMap, NamedAttrMap, RefU64, SUL_DB, SurlValue, get_children_ele_nodes, get_db_option,
+    get_named_attmap, get_named_attmap_with_uda, get_next_prev, get_pe, get_world,
+    get_world_transform, init_second_unit_surreal,
 };
 use async_trait::async_trait;
 use bevy_transform::components::Transform;
@@ -19,9 +19,9 @@ use sqlx::{MySql, Pool};
 use std::collections::HashMap;
 use std::str::FromStr;
 use std::time::Duration;
+use surrealdb::Surreal;
 use surrealdb::engine::any::Any;
 use surrealdb::opt::auth::Root;
-use surrealdb::Surreal;
 
 pub async fn init_surreal_with_signin(db_option: &DbOption) -> anyhow::Result<()> {
     SUL_DB
@@ -52,6 +52,11 @@ impl AiosDBMgr {
             .build()
             .unwrap();
         let db_option: DbOption = s.try_deserialize().unwrap();
+        println!("=== SurrealDB 连接信息 ===");
+        println!("数据库地址: {}:{}", &db_option.v_ip, &db_option.v_port);
+        println!("命名空间: {}", &db_option.surreal_ns);
+        println!("数据库名: {}", &db_option.project_name);
+        println!("========================");
         match init_surreal().await {
             Ok(_) => {}
             Err(e) => {
@@ -224,16 +229,18 @@ impl PdmsDataInterface for AiosDBMgr {
     }
 
     async fn get_world_transform(&self, refno: RefU64) -> anyhow::Result<Option<Transform>> {
-        // let sql = format!(
-        //     "
-        // (select (->inst_relate.world_trans.d)[0] as length from {})[0].length;
-        // ",
-        //     refno.to_pe_key()
-        // );
-        // let mut response = SUL_DB.query(sql).await?;
-        // let transform: Option<Transform> = response.take(0)?;
-        get_world_transform(refno.into()).await
-        // Ok(transform)
+        let mut t = get_world_transform(refno.into()).await?;
+        if let Some(ref mut transform) = t {
+            transform.translation.x = (transform.translation.x * 100.0).round() / 100.0;
+            transform.translation.y = (transform.translation.y * 100.0).round() / 100.0;
+            transform.translation.z = (transform.translation.z * 100.0).round() / 100.0;
+
+            transform.rotation.x = (transform.rotation.x * 100.0).round() / 100.0;
+            transform.rotation.y = (transform.rotation.y * 100.0).round() / 100.0;
+            transform.rotation.z = (transform.rotation.z * 100.0).round() / 100.0;
+            transform.rotation.w = (transform.rotation.w * 100.0).round() / 100.0;
+        }
+        Ok(t)
     }
 
     async fn get_prev(&self, refno: RefU64) -> anyhow::Result<RefU64> {

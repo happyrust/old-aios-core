@@ -198,7 +198,6 @@ pub async fn query_mdb_db_nums(module: DBType) -> anyhow::Result<Vec<u32>> {
         .bind(("mdb", mdb))
         .bind(("db_type", db_type))
         .await?;
-    dbg!(&response);
     let pe: Vec<u32> = response.take(1)?;
     Ok(pe)
 }
