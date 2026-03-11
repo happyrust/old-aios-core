@@ -2,6 +2,8 @@ use bevy_ecs::prelude::Resource;
 use glam::Vec3;
 use serde::{Deserialize, Serialize};
 use std::collections::{HashMap, HashSet};
+use futures::StreamExt;
+use serde_json::error::Category::Data;
 
 use crate::data_center::AttrValue::{AttrFloat, AttrStrArray, AttrString};
 use crate::metadata_manager::FileBytes;
@@ -20,6 +22,29 @@ pub struct DataCenterProject {
     pub instances: Vec<DataCenterInstance>,
 }
 
+impl DataCenterProject {
+    /// 转化为新标准元数据格式
+    pub fn into_new_type(self, code_book: &HashMap<String, CodeBookMapping>) -> DataCenterProjectNewType {
+        let new_instance = self.instances.into_iter().filter_map(|i| i.into_new_type(code_book)).collect::<Vec<_>>();
+        DataCenterProjectNewType {
+            project_code: self.project_code,
+            owner: self.owner,
+            instances: new_instance,
+        }
+    }
+}
+
+#[derive(Serialize, Deserialize, Clone, Debug, Default)]
+pub struct DataCenterProjectNewType {
+    // #[serde(rename = "packageCode")]
+    // pub package_code: String,
+    #[serde(rename = "projectCode")]
+    pub project_code: String,
+    pub owner: String,
+    pub instances: Vec<DataCenterInstanceNewType>,
+}
+
+
 #[derive(Serialize, Deserialize, Clone, Debug, Default)]
 pub struct DataCenterProjectHH {
     // #[serde(rename = "packageCode")]
@@ -36,7 +61,7 @@ impl DataCenterProject {
     }
 }
 
-#[derive(Serialize, Deserialize, Clone, Debug, Default,Hash)]
+#[derive(Serialize, Deserialize, Clone, Debug, Default, Hash)]
 pub struct DataCenterProjectWithRelations {
     #[serde(rename = "projectCode")]
     pub project_code: String,
@@ -75,7 +100,7 @@ pub struct DataCenterProjectWithRelationsHH {
 // }
 
 // #[cfg(not(feature = "hd"))]
-#[derive(Serialize, Deserialize, Clone, Debug, Default,Hash)]
+#[derive(Serialize, Deserialize, Clone, Debug, Default, Hash)]
 pub struct DataCenterInstance {
     #[serde(rename = "objectModelCode")]
     pub object_model_code: String,
@@ -88,6 +113,59 @@ pub struct DataCenterInstance {
     // pub operate: Option<String>,
     pub version: String,
     pub attributes: Vec<DataCenterAttr>,
+}
+
+impl DataCenterInstance {
+    pub fn into_new_type(self, code_book: &HashMap<String, CodeBookMapping>) -> Option<DataCenterInstanceNewType> {
+        if let Some(new_object_code_map) = code_book.get(&self.object_model_code) {
+            // 替换属性编码
+            let mut attr = Vec::new();
+            for value in self.attributes {
+                if let Some(new_code) = new_object_code_map.attr_mapping.get(&value.attribute_model_code) {
+                    attr.push(DataCenterAttr {
+                        attribute_model_code: new_code.clone(),
+                        value: value.value,
+                    });
+                } else {
+                    println!("未发现密码本中: {} 对应的新编码，值为: {}", value.attribute_model_code, value.value);
+                }
+            }
+            // 增加 工厂对象类编码 属性
+            attr.push(DataCenterAttr {
+                attribute_model_code: "PBS_COD".to_string(),
+                value: self.object_model_code,
+            });
+            return Some(DataCenterInstanceNewType {
+                object_model_code: new_object_code_map.new_object_code.clone(),
+                operate: self.operate,
+                version: self.version,
+                attributes: attr,
+            });
+        }
+        None
+    }
+}
+
+#[derive(Serialize, Deserialize, Clone, Debug, Default, Hash)]
+pub struct DataCenterInstanceNewType {
+    #[serde(rename = "objectModelCode")]
+    pub object_model_code: String,
+    #[serde(serialize_with = "serialize_option_string_with_default")]
+    pub operate: Option<String>,
+    // #[cfg(not(feature = "hd"))]
+    // #[serde(skip_serializing_if = "Option::is_none")]
+    // pub operate: Option<String>,
+    pub version: String,
+    pub attributes: Vec<DataCenterAttr>,
+}
+
+/// 代码映射结果结构
+/// 外层HashMap: key=旧对象类编码, value=(新对象类编码, 属性映射表)
+/// 内层HashMap: key=旧属性编码, value=新属性编码
+#[derive(Debug, Clone)]
+pub struct CodeBookMapping {
+    pub new_object_code: String,
+    pub attr_mapping: HashMap<String, String>,
 }
 
 #[derive(Serialize, Deserialize, Clone, Debug, Default)]
@@ -106,8 +184,8 @@ fn serialize_option_string_with_default<S>(
     value: &Option<String>,
     serializer: S,
 ) -> Result<S::Ok, S::Error>
-where
-    S: serde::Serializer,
+    where
+        S: serde::Serializer,
 {
     match value {
         Some(v) => serializer.serialize_str(v),
@@ -115,7 +193,7 @@ where
     }
 }
 
-#[derive(Serialize, Deserialize, Clone, Debug, Default,Hash)]
+#[derive(Serialize, Deserialize, Clone, Debug, Default, Hash)]
 pub struct DataCenterRelations {
     pub version: String,
     #[serde(rename = "objectModelCode")]
@@ -187,7 +265,7 @@ impl DataCenterRelationsHH {
     }
 }
 
-#[derive(Serialize, Deserialize, Clone, Debug, Default,Hash)]
+#[derive(Serialize, Deserialize, Clone, Debug, Default, Hash)]
 pub struct DataCenterAttr {
     #[serde(rename = "attributeModelCode")]
     pub attribute_model_code: String,
@@ -296,7 +374,7 @@ pub struct ThreeDDatacenterRequest {
     pub create_rvm_relations: bool,
     // 是否为初设
     #[serde(default)]
-    pub b_first_time_design:bool,
+    pub b_first_time_design: bool,
 }
 
 #[derive(Serialize, Deserialize, Clone, Debug, Default)]

@@ -15,6 +15,8 @@ pub use types::db_info::PdmsDatabaseInfo;
 extern crate bitflags;
 extern crate core;
 extern crate phf;
+extern crate serde_json;
+extern crate futures;
 
 pub mod accel_tree;
 pub mod aios_db_mgr;
