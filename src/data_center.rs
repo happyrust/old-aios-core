@@ -74,6 +74,25 @@ impl DataCenterProjectWithRelations {
     pub fn convert_package_code() -> String {
         Uuid::new_v4().to_string()
     }
+
+    pub fn into_new_type(self, code_book: &HashMap<String, CodeBookMapping>) -> DataCenterProjectWithRelationsNewType {
+        let new_instance = self.instances.into_iter().filter_map(|i| i.into_new_type(code_book)).collect::<Vec<_>>();
+        DataCenterProjectWithRelationsNewType {
+            project_code: self.project_code,
+            owner: self.owner,
+            instances: new_instance,
+            relations: self.relations,
+        }
+    }
+}
+
+#[derive(Serialize, Deserialize, Clone, Debug, Default)]
+pub struct DataCenterProjectWithRelationsNewType {
+    #[serde(rename = "projectCode")]
+    pub project_code: String,
+    pub owner: String,
+    pub instances: Vec<DataCenterInstanceNewType>,
+    pub relations: Vec<DataCenterRelations>,
 }
 
 #[derive(Serialize, Deserialize, Clone, Debug, Default)]
