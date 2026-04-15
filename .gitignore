@@ -15,6 +15,7 @@ Cargo.lock
 
 /target
 /assets
+/vendor
 .idea/
 /.gitee
 DbOption.toml
