@@ -1,9 +1,9 @@
 use bevy_ecs::prelude::Resource;
+use futures::StreamExt;
 use glam::Vec3;
 use serde::{Deserialize, Serialize};
-use std::collections::{HashMap, HashSet};
-use futures::StreamExt;
 use serde_json::error::Category::Data;
+use std::collections::{HashMap, HashSet};
 
 use crate::data_center::AttrValue::{AttrFloat, AttrStrArray, AttrString};
 use crate::metadata_manager::FileBytes;
@@ -24,8 +24,15 @@ pub struct DataCenterProject {
 
 impl DataCenterProject {
     /// 转化为新标准元数据格式
-    pub fn into_new_type(self, code_book: &HashMap<String, CodeBookMapping>) -> DataCenterProjectNewType {
-        let new_instance = self.instances.into_iter().filter_map(|i| i.into_new_type(code_book)).collect::<Vec<_>>();
+    pub fn into_new_type(
+        self,
+        code_book: &HashMap<String, CodeBookMapping>,
+    ) -> DataCenterProjectNewType {
+        let new_instance = self
+            .instances
+            .into_iter()
+            .filter_map(|i| i.into_new_type(code_book))
+            .collect::<Vec<_>>();
         DataCenterProjectNewType {
             project_code: self.project_code,
             owner: self.owner,
@@ -43,7 +50,6 @@ pub struct DataCenterProjectNewType {
     pub owner: String,
     pub instances: Vec<DataCenterInstanceNewType>,
 }
-
 
 #[derive(Serialize, Deserialize, Clone, Debug, Default)]
 pub struct DataCenterProjectHH {
@@ -75,8 +81,15 @@ impl DataCenterProjectWithRelations {
         Uuid::new_v4().to_string()
     }
 
-    pub fn into_new_type(self, code_book: &HashMap<String, CodeBookMapping>) -> DataCenterProjectWithRelationsNewType {
-        let new_instance = self.instances.into_iter().filter_map(|i| i.into_new_type(code_book)).collect::<Vec<_>>();
+    pub fn into_new_type(
+        self,
+        code_book: &HashMap<String, CodeBookMapping>,
+    ) -> DataCenterProjectWithRelationsNewType {
+        let new_instance = self
+            .instances
+            .into_iter()
+            .filter_map(|i| i.into_new_type(code_book))
+            .collect::<Vec<_>>();
         DataCenterProjectWithRelationsNewType {
             project_code: self.project_code,
             owner: self.owner,
@@ -135,18 +148,27 @@ pub struct DataCenterInstance {
 }
 
 impl DataCenterInstance {
-    pub fn into_new_type(self, code_book: &HashMap<String, CodeBookMapping>) -> Option<DataCenterInstanceNewType> {
+    pub fn into_new_type(
+        self,
+        code_book: &HashMap<String, CodeBookMapping>,
+    ) -> Option<DataCenterInstanceNewType> {
         if let Some(new_object_code_map) = code_book.get(&self.object_model_code) {
             // 替换属性编码
             let mut attr = Vec::new();
             for value in self.attributes {
-                if let Some(new_code) = new_object_code_map.attr_mapping.get(&value.attribute_model_code) {
+                if let Some(new_code) = new_object_code_map
+                    .attr_mapping
+                    .get(&value.attribute_model_code)
+                {
                     attr.push(DataCenterAttr {
                         attribute_model_code: new_code.clone(),
                         value: value.value,
                     });
                 } else {
-                    println!("未发现密码本中: {} 对应的新编码，值为: {}", value.attribute_model_code, value.value);
+                    println!(
+                        "未发现密码本中: {} 对应的新编码，值为: {}",
+                        value.attribute_model_code, value.value
+                    );
                 }
             }
             // 增加 工厂对象类编码 属性
@@ -193,7 +215,7 @@ pub struct DataCenterInstanceHH {
     pub object_model_code: String,
     #[serde(rename = "instanceCode")]
     pub instance_code: String,
-    #[serde(skip_serializing_if = "Option::is_none")]
+    #[serde(serialize_with = "serialize_option_string_with_default")]
     pub operate: Option<String>,
     pub version: String,
     pub attributes: Vec<DataCenterAttr>,
@@ -203,8 +225,8 @@ fn serialize_option_string_with_default<S>(
     value: &Option<String>,
     serializer: S,
 ) -> Result<S::Ok, S::Error>
-    where
-        S: serde::Serializer,
+where
+    S: serde::Serializer,
 {
     match value {
         Some(v) => serializer.serialize_str(v),
@@ -255,7 +277,7 @@ pub struct DataCenterRelationsHH {
     pub object_model_code: String,
     #[serde(rename = "instanceCode")]
     pub instance_code: String,
-    #[serde(skip_serializing_if = "Option::is_none")]
+    #[serde(serialize_with = "serialize_option_string_with_default")]
     pub operate: Option<String>,
     #[serde(rename = "startObjectCode")]
     pub start_object_code: String,
@@ -347,9 +369,7 @@ impl Into<String> for AttrValue {
                 serde_json::to_string(&a).unwrap_or("{}".to_string())
             }
             AttrValue::AttrItemArray(a) => serde_json::to_string(&a).unwrap_or("[]".to_string()),
-            AttrValue::AttrStringMap(a) => {
-                serde_json::to_string(&a).unwrap_or("{}".to_string())
-            }
+            AttrValue::AttrStringMap(a) => serde_json::to_string(&a).unwrap_or("{}".to_string()),
         }
     }
 }
