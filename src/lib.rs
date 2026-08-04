@@ -117,6 +117,16 @@ use crate::options::{DbOption, SecondUnitDbOption};
 use once_cell_serde::sync::OnceCell;
 use surrealdb::opt::auth::Root;
 
+/// 配置文件名：`DB_OPTION_FILE` 环境变量优先，缺省仍是按 cwd 解析的 `DbOption`。
+///
+/// 这是 gen-model 2026-07-27 测试计划的 Gate 0：`cargo test` 的 cwd 恒为 crate 根，
+/// 没有环境变量入口时全部 `live_*` 实库测试只能靠「换 cwd」变通定靶。缺省值保持
+/// `DbOption` 不变，既有服务与脚本零影响；测试用
+/// `$env:DB_OPTION_FILE='db_options/DbOption-e2e-8042'` 一类的值定靶。
+pub(crate) fn get_config_file_name() -> String {
+    std::env::var("DB_OPTION_FILE").unwrap_or_else(|_| "DbOption".to_string())
+}
+
 ///获得db option
 #[inline]
 pub fn get_db_option() -> &'static DbOption {
@@ -124,7 +134,7 @@ pub fn get_db_option() -> &'static DbOption {
     INSTANCE.get_or_init(|| {
         use config::{Config, ConfigError, Environment, File};
         let s = Config::builder()
-            .add_source(File::with_name("DbOption"))
+            .add_source(File::with_name(&get_config_file_name()))
             .build()
             .unwrap();
         s.try_deserialize::<DbOption>().unwrap()
@@ -164,7 +174,7 @@ pub fn get_uda_info() -> &'static (DashMap<u32, String>, DashMap<String, u32>) {
         let mut udna_ukey_map = DashMap::new();
         use config::{Config, ConfigError, Environment, File};
         let Ok(s) = Config::builder()
-            .add_source(File::with_name("DbOption"))
+            .add_source(File::with_name(&get_config_file_name()))
             .build()
         else {
             return (DashMap::new(), DashMap::new());
@@ -188,7 +198,7 @@ pub fn get_uda_info() -> &'static (DashMap<u32, String>, DashMap<String, u32>) {
 
 pub async fn init_test_surreal() -> Result<DbOption, HandleError> {
     let s = Config::builder()
-        .add_source(File::with_name("DbOption"))
+        .add_source(File::with_name(&get_config_file_name()))
         .build()
         .map_err(|e| HandleError::SurrealError {
             msg: format!("Failed to load DbOption config: {}", e),
@@ -241,7 +251,7 @@ pub async fn init_test_surreal() -> Result<DbOption, HandleError> {
 
 pub async fn init_surreal() -> anyhow::Result<()> {
     let s = Config::builder()
-        .add_source(File::with_name("DbOption"))
+        .add_source(File::with_name(&get_config_file_name()))
         .build()
         .unwrap();
     let db_option: DbOption = s.try_deserialize()?;
@@ -312,7 +322,7 @@ pub async fn b_connected_second_unit() -> anyhow::Result<()> {
 /// 初始化测试数据库
 pub async fn init_demo_test_surreal() -> Result<DbOption, HandleError> {
     let s = Config::builder()
-        .add_source(File::with_name("DbOption"))
+        .add_source(File::with_name(&get_config_file_name()))
         .build()
         .map_err(|e| HandleError::SurrealError {
             msg: format!("Failed to load DbOption config: {}", e),

@@ -9,7 +9,7 @@ pub mod test_insert;
 pub async fn get_version_conn() -> DatabaseConnection{
     use config::{Config, File};
     let s = Config::builder()
-        .add_source(File::with_name("DbOption"))
+        .add_source(File::with_name(&crate::get_config_file_name()))
         .build()
         .unwrap();
     let db_option: DbOption = s.try_deserialize().unwrap();

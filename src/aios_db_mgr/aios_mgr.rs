@@ -48,7 +48,7 @@ pub struct AiosDBMgr {
 impl AiosDBMgr {
     pub async fn init_from_db_option() -> anyhow::Result<Self> {
         let s = Config::builder()
-            .add_source(File::with_name("DbOption"))
+            .add_source(File::with_name(&crate::get_config_file_name()))
             .build()
             .unwrap();
         let db_option: DbOption = s.try_deserialize().unwrap();
