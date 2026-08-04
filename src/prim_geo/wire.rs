@@ -1063,13 +1063,13 @@ pub fn gen_occ_wires(loops: &Vec<Vec<Vec3>>) -> anyhow::Result<Vec<Wire>> {
     if loops[0].len() < 3 {
         return Err(anyhow!("第一个 wire 顶点数量不够，小于3。"));
     }
-    let mut pos_poly = gen_polyline(&loops[0])?;
+    let mut pos_poly = gen_polyline_original(&loops[0])?;
     if pos_poly.vertex_data.len() < 3 {
         return Err(anyhow!("pos_poly 顶点数量不够，小于3。"));
     }
 
     for pts in loops.iter().skip(1) {
-        let Ok(neg) = gen_polyline(pts) else {
+        let Ok(neg) = gen_polyline_original(pts) else {
             continue;
         };
         let mut r = pos_poly.boolean(&neg, BooleanOp::Not);
@@ -1801,4 +1801,26 @@ fn test_gen_polyline_with_ploop_processor() {
             println!("❌ 无 FRADIUS 测试失败: {}", e);
         }
     }
+}
+
+#[test]
+fn gen_polyline_handles_fillet_radius_equal_to_edge_length() {
+    let vertices = vec![
+        Vec3::new(0.0, 0.0, 0.0),
+        Vec3::new(0.0, 24450.0, 0.0),
+        Vec3::new(24450.0, 24450.0, 24450.0),
+        Vec3::new(24450.0, 0.0, 0.0),
+    ];
+
+    let polyline = gen_polyline(&vertices).expect("extreme fillet must remain renderable");
+
+    assert!(polyline.vertex_data.len() >= 3);
+    assert!(
+        polyline
+            .vertex_data
+            .iter()
+            .all(|vertex| vertex.x.is_finite()
+                && vertex.y.is_finite()
+                && vertex.bulge.is_finite())
+    );
 }

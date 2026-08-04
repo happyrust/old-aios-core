@@ -226,7 +226,7 @@ pub async fn get_owner_type_name(refno: RefU64) -> anyhow::Result<String> {
 #[cached(result = true)]
 pub async fn get_self_and_owner_type_name(refno: RefnoEnum) -> anyhow::Result<Vec<String>> {
     let sql = format!(
-        "select value [noun, owner.noun] from only {} limit 1",
+        "select value [noun, owner.noun ?? ''] from only {} limit 1",
         refno.to_pe_key()
     );
     let mut response = SUL_DB.query(sql).await?;
@@ -531,6 +531,24 @@ pub async fn get_named_attmap(refno: RefnoEnum) -> anyhow::Result<NamedAttrMap> 
     Ok(named_attmap)
 }
 
+/// Query an implicit element whose common `pe` row is absent.
+///
+/// Structural loop/spine members can be persisted only in their noun table
+/// while `pe_owner` still points at the corresponding `pe` id.
+pub async fn get_implicit_named_attmap(
+    refno: RefnoEnum,
+    noun: &str,
+) -> anyhow::Result<NamedAttrMap> {
+    let sql = format!(
+        "SELECT * FROM ONLY type::thing('{}', record::id({})) LIMIT 1;",
+        noun,
+        refno.to_pe_key()
+    );
+    let mut response = SUL_DB.query(sql).await?;
+    let o: surrealdb::Value = response.take(0)?;
+    Ok(o.into_inner().into())
+}
+
 #[cached(result = true)]
 pub async fn get_siblings(refno: RefnoEnum) -> anyhow::Result<Vec<RefnoEnum>> {
     let sql = format!("select value in from {}<-pe_owner", refno.to_pe_key());
@@ -658,7 +676,19 @@ pub async fn get_cat_attmap(refno: RefnoEnum) -> anyhow::Result<NamedAttrMap> {
 #[cached(result = true)]
 pub async fn get_children_named_attmaps(refno: RefnoEnum) -> anyhow::Result<Vec<NamedAttrMap>> {
     let sql = format!(
-        r#"select value in.refno.* from {}<-pe_owner where in.id!=none and !in.deleted"#,
+        r#"select value in.refno.*
+            ?? type::thing('POINSP', record::id(in)).*
+            ?? type::thing('CURVE', record::id(in)).*
+            ?? type::thing('PAVE', record::id(in)).*
+            ?? type::thing('VERT', record::id(in)).*
+            from {}<-pe_owner
+            where (in.id != none and !in.deleted)
+               or (in.id = none and (
+                    type::thing('POINSP', record::id(in)).id != none
+                 or type::thing('CURVE', record::id(in)).id != none
+                 or type::thing('PAVE', record::id(in)).id != none
+                 or type::thing('VERT', record::id(in)).id != none
+               ))"#,
         refno.to_pe_key()
     );
     // println!("get_children_named_attmaps sql is {}", &sql);
@@ -713,8 +743,14 @@ pub async fn query_filter_children(
             refno.to_pe_key()
         )
     } else {
+        let implicit_types = types
+            .iter()
+            .map(|noun| format!("type::thing('{noun}', record::id(in)).id != none"))
+            .join(" or ");
         format!(
-            r#"select value in from {}<-pe_owner where in.noun in [{nouns_str}] and record::exists(in.id) and !in.deleted"#,
+            r#"select value in from {}<-pe_owner
+                where (in.noun in [{nouns_str}] and record::exists(in.id) and !in.deleted)
+                   or (in.noun = none and ({implicit_types}))"#,
             refno.to_pe_key()
         )
     };
@@ -785,23 +821,50 @@ pub async fn get_children_ele_nodes(refno: RefnoEnum) -> anyhow::Result<Vec<EleT
 }
 
 pub async fn clear_all_caches(refno: RefnoEnum) {
+    clear_all_caches_batch(std::slice::from_ref(&refno)).await;
+}
+
+/// Invalidate every per-element cache for a whole set of refnos in one pass.
+///
+/// The world caches are keyed by more than the changed element, so they can
+/// only be dropped wholesale — but once per batch is enough. The per-element
+/// caches then need each lock taken only once instead of once per refno, which
+/// is what makes invalidating a wide incremental window affordable.
+pub async fn clear_all_caches_batch(refnos: &[RefnoEnum]) {
     // crate::GET_WORLD_TRANSFORM.lock().await.cache_remove(&refno);
     crate::GET_WORLD_TRANSFORM.lock().await.cache_clear();
     crate::GET_WORLD_MAT4.lock().await.cache_clear();
-    QUERY_ANCESTOR_REFNOS.lock().await.cache_remove(&refno);
-    QUERY_DEEP_CHILDREN_REFNOS.lock().await.cache_remove(&refno);
-    GET_PE.lock().await.cache_remove(&refno);
-    GET_TYPE_NAME.lock().await.cache_remove(&refno);
-    GET_SIBLINGS.lock().await.cache_remove(&refno);
-    GET_NAMED_ATTMAP.lock().await.cache_remove(&refno);
-    // GET_ANCESTOR_ATTMAPS.lock().await.cache_remove(&refno);
-    GET_NAMED_ATTMAP_WITH_UDA.lock().await.cache_remove(&refno);
-    GET_CHILDREN_REFNOS.lock().await.cache_remove(&refno);
-    GET_CHILDREN_NAMED_ATTMAPS.lock().await.cache_remove(&refno);
-    GET_CAT_ATTMAP.lock().await.cache_remove(&refno);
-    GET_CAT_REFNO.lock().await.cache_remove(&refno);
-    // GET_UI_NAMED_ATTMAP.lock().await.cache_remove(&refno);
-    GET_CHILDREN_PES.lock().await.cache_remove(&refno);
+
+    if refnos.is_empty() {
+        return;
+    }
+
+    macro_rules! remove_all {
+        ($cache:expr) => {{
+            let mut cache = $cache.lock().await;
+            for refno in refnos {
+                cache.cache_remove(refno);
+            }
+        }};
+    }
+
+    remove_all!(QUERY_ANCESTOR_REFNOS);
+    remove_all!(QUERY_DEEP_CHILDREN_REFNOS);
+    remove_all!(GET_PE);
+    remove_all!(GET_TYPE_NAME);
+    // 键是元素自身、值含属主类型：OWNER 搬迁后不失效的话，重生成的根解析
+    // （query_deep_visible_inst_refnos 的 BRAN 成员判断）会拿着旧属主类型走错分支。
+    remove_all!(GET_SELF_AND_OWNER_TYPE_NAME);
+    remove_all!(GET_SIBLINGS);
+    remove_all!(GET_NAMED_ATTMAP);
+    // GET_ANCESTOR_ATTMAPS
+    remove_all!(GET_NAMED_ATTMAP_WITH_UDA);
+    remove_all!(GET_CHILDREN_REFNOS);
+    remove_all!(GET_CHILDREN_NAMED_ATTMAPS);
+    remove_all!(GET_CAT_ATTMAP);
+    remove_all!(GET_CAT_REFNO);
+    // GET_UI_NAMED_ATTMAP
+    remove_all!(GET_CHILDREN_PES);
 }
 
 ///获得children

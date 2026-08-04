@@ -1,9 +1,7 @@
 use crate::accel_tree::acceleration_tree::RStarBoundingBox;
 use crate::room::data::RoomElement;
 #[cfg(not(target_arch = "wasm32"))]
-use crate::room::room::{
-    load_aabb_tree, load_room_aabb_tree, GLOBAL_AABB_TREE, GLOBAL_ROOM_AABB_TREE,
-};
+use crate::room::room::{load_aabb_tree, GLOBAL_AABB_TREE};
 use crate::shape::pdms_shape::PlantMesh;
 use crate::{query_insts, RefU64, RefnoEnum, SUL_DB};
 use glam::Vec3;
@@ -32,15 +30,21 @@ pub async fn query_room_number_by_point(point: Vec3) -> anyhow::Result<Option<St
 }
 
 //传进来的是世界坐标系下的点
+///
+/// 候选面板取自全局 `GLOBAL_AABB_TREE` 并按 `noun` 过滤，不再维护第二棵只装面板的树
+/// （ADR-010 §6）。原先那棵 `GLOBAL_ROOM_AABB_TREE` 唯一的填充入口 `load_room_aabb_tree`
+/// 里 SQL 括号未闭合、内层 select 无主表，解析必失败，而这里又是 `.unwrap()`——
+/// 整条反向路径实际是 panic 的死代码。一棵树也省掉了两棵互相漂移的可能。
 #[cfg(not(target_arch = "wasm32"))]
 pub async fn query_room_panel_by_point(point: Vec3) -> anyhow::Result<Option<RefnoEnum>> {
     //通过rtree 找到所在的几个房间可能
-    load_room_aabb_tree().await.unwrap();
+    load_aabb_tree().await?;
     let pt: Point3<f32> = point.into();
     let point_aabb = Aabb::new(pt, pt);
-    let read = GLOBAL_ROOM_AABB_TREE.read().await;
-    let mut contains_query = read
+    let read = GLOBAL_AABB_TREE.read().await;
+    let contains_query = read
         .locate_intersecting_bounds(&point_aabb)
+        .filter(|b| b.noun == "PANE")
         .collect::<Vec<_>>();
 
     // dbg!(&contains_query);

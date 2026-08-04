@@ -32,7 +32,11 @@ pub fn get_inst_relate_keys(refnos: &[RefnoEnum]) -> String {
 pub async fn fetch_loops_and_height(refno: RefnoEnum) -> anyhow::Result<(Vec<Vec<Vec3>>, f32)> {
     let sql = format!(
         r#"
-        select value (select value [in.refno.POS[0], in.refno.POS[1], in.refno.FRAD] from <-pe_owner) from
+        select value (select value [
+            in.refno.POS[0] ?? type::thing("PAVE", record::id(in)).POS[0] ?? type::thing("VERT", record::id(in)).POS[0],
+            in.refno.POS[1] ?? type::thing("PAVE", record::id(in)).POS[1] ?? type::thing("VERT", record::id(in)).POS[1],
+            in.refno.FRAD ?? type::thing("PAVE", record::id(in)).FRAD ?? type::thing("VERT", record::id(in)).FRAD
+        ] from <-pe_owner) from
             (select value in from {0}<-pe_owner where in.noun in ["LOOP", "PLOO"]);
         array::complement((select value refno.HEIG from [ (select value in.id from only {0}<-pe_owner where in.noun in ["LOOP", "PLOO"] limit 1), {0}]), [none])[0];
         "#,
@@ -47,14 +51,25 @@ pub async fn fetch_loops_and_height(refno: RefnoEnum) -> anyhow::Result<(Vec<Vec
 }
 
 ///通过surql查询pe数据
-#[cached(result = true)]
+///
+/// 刻意**不加** `#[cached]`：本函数产出的是重生成路径的「刷新集」——网格生成、
+/// 包围盒刷新、房间触发全按它圈定范围。它的值随分支成员增删而变，而增量管线的
+/// `clear_all_caches_batch` 只按「变更元素 + 其属主」失效，从不知道这里还有一份
+/// 按**生成根**为键的快照；缓存命中一次陈旧值，新加的构件就整体缺席本轮刷新
+/// （mesh 不生成、aabb 不落库、房间不触发），且无任何报错。真正贵的子树遍历在
+/// `query_deep_children_refnos` 里另有缓存（并被失效机制覆盖），这里每根多跑的
+/// 几条查询相对整根重生成（秒级）是噪音。
 pub async fn query_deep_visible_inst_refnos(refno: RefnoEnum) -> anyhow::Result<Vec<RefnoEnum>> {
     let types = super::get_self_and_owner_type_name(refno).await?;
     if types[1] == "BRAN" || types[1] == "HANG" {
         return Ok(vec![refno]);
     }
     if types[0] == "BRAN" || types[0] == "HANG" {
-        let children_refnos = super::get_children_refnos(refno).await?;
+        // 分支自身也要算：隐含直管段（TUBI/BOXI）的 inst_relate 行挂在 BRAN/HANG
+        // 名下（cata_model 的 insert_tubi 以分支为键）。漏掉它，重生成后的包围盒
+        // 刷新与房间归属就永远轮不到管段。
+        let mut children_refnos = super::get_children_refnos(refno).await?;
+        children_refnos.push(refno);
         return Ok(children_refnos);
     }
     //TODO，这里可以采用ZONE作为中间层去加速这个过程
@@ -62,13 +77,16 @@ pub async fn query_deep_visible_inst_refnos(refno: RefnoEnum) -> anyhow::Result<
     let branch_refnos = super::query_filter_deep_children(refno, &["BRAN", "HANG"]).await?;
 
     let mut target_refnos = super::query_multi_children_refnos(&branch_refnos).await?;
+    // 同上：分支自身承载隐含直管段的几何行。
+    target_refnos.extend(branch_refnos.iter().copied());
 
     let visible_refnos = super::query_filter_deep_children(refno, &VISBILE_GEO_NOUNS).await?;
     target_refnos.extend(visible_refnos);
     Ok(target_refnos)
 }
 
-#[cached(result = true)]
+/// 与 [`query_deep_visible_inst_refnos`] 同理不加 `#[cached]`：负实体集合同样随
+/// 成员增删而变，键是生成根、失效机制够不着。
 pub async fn query_deep_neg_inst_refnos(refno: RefnoEnum) -> anyhow::Result<Vec<RefnoEnum>> {
     let neg_refnos = super::query_filter_deep_children(refno, &TOTAL_NEG_NOUN_NAMES).await?;
     Ok(neg_refnos)

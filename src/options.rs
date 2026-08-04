@@ -244,6 +244,9 @@ pub struct DbOption {
     #[clap(long)]
     pub puhua_database_password: String,
 
+    /// 房间关键字（D10）：历史 toml 大量写成 `room_keyword`，与字段名对不上时 serde
+    /// 会静默丢弃、退回默认值 `-RM`。alias 让两种键名都生效，老配置不用改。
+    #[serde(alias = "room_keyword")]
     pub room_key_word: Option<Vec<String>>,
 
     pub meshes_path: Option<String>,

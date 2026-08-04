@@ -42,7 +42,10 @@ pub async fn create_profile_geos(refno: RefnoEnum,
         let children_refnos = crate::query_filter_children(refno, &["SPINE"]).await.unwrap_or_default();
         let mut paths = vec![];
         for &spine_refno in children_refnos.iter() {
-            let spine_att = crate::get_named_attmap(spine_refno).await?;
+            let mut spine_att = crate::get_named_attmap(spine_refno).await?;
+            if spine_att.is_empty() {
+                spine_att = crate::get_implicit_named_attmap(spine_refno, "SPINE").await?;
+            }
             let spine_mat = crate::get_world_mat4(spine_refno, true).await?.unwrap_or_default();
             let inv_mat = spine_mat.inverse();
             //如果是墙，会有这两个属性

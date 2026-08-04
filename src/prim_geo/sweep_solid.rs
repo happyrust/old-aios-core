@@ -60,7 +60,7 @@ impl SweepSolid {
     #[inline]
     pub fn is_drns_sloped(&self) -> bool {
         self.drns
-            .map(|v| abs_diff_ne!(v.z, 1.0, epsilon = 0.001))
+            .map(|v| abs_diff_ne!(v.z, -1.0, epsilon = 0.001))
             .unwrap_or(false)
     }
 
@@ -73,17 +73,14 @@ impl SweepSolid {
 
     //获得drns/drne的面的旋转矩阵
     pub fn get_face_mat4(&self, is_start: bool) -> DMat4 {
-        let axis = if is_start {
-            if self.drns.is_none() {
-                return DMat4::IDENTITY;
-            }
-            DVec3::Z
+        let is_sloped = if is_start {
+            self.is_drns_sloped()
         } else {
-            if self.drne.is_none() {
-                return DMat4::IDENTITY;
-            }
-            DVec3::NEG_Z
+            self.is_drne_sloped()
         };
+        if !is_sloped {
+            return DMat4::IDENTITY;
+        }
         let dir = if is_start {
             self.drns.unwrap()
         } else {
@@ -478,10 +475,14 @@ impl Default for SweepSolid {
     fn default() -> Self {
         Self {
             profile: CateProfileParam::UNKOWN,
+            drns: None,
+            drne: None,
             bangle: 0.0,
             plax: Vec3::Y,
             extrude_dir: DVec3::Z,
-            ..Default::default()
+            height: 0.0,
+            path: SweepPath3D::default(),
+            lmirror: false,
         }
     }
 }
@@ -690,8 +691,15 @@ impl BrepShapeTrait for SweepSolid {
                     return Ok(shape.into_shape().into());
                 }
                 SweepPath3D::Line(l) => {
+                    if top_profile_wire.is_none() && !self.is_sloped() {
+                        return Ok(wire
+                            .to_face()
+                            .extrude(DVec3::Z * l.length() as f64)
+                            .into_shape()
+                            .into());
+                    }
                     let mut wires = vec![];
-                    let mut transform_btm = self.get_face_mat4(true);
+                    let transform_btm = self.get_face_mat4(true);
                     let mut transform_top = self.get_face_mat4(false);
                     transform_top =
                         DMat4::from_translation(DVec3::Z * l.length() as f64) * transform_top;
