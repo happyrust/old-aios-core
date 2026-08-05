@@ -30,6 +30,8 @@ use serde::{Deserialize, Serialize};
 use serde_with::serde_as;
 use serde_with::DisplayFromStr;
 use std::{collections::HashSet, f32::consts::E, time::Instant};
+use surrealdb::engine::any::Any;
+use surrealdb::Surreal;
 
 pub fn cal_ori_by_z_axis_ref_x(v: DVec3) -> DQuat {
     let mut ref_dir = if v.normalize().dot(DVec3::Z).abs() > 0.999 {
@@ -175,24 +177,46 @@ pub fn cal_cutp_ori(axis_dir: DVec3, cutp: DVec3) -> DQuat {
 }
 
 pub async fn get_spline_pts(refno: RefnoEnum) -> anyhow::Result<Vec<DVec3>> {
-    let mut response = SUL_DB.query(
+    if let Some(ctx) = super::staging::active_staging_reads() {
+        return get_spline_pts_on(ctx.db(), refno).await;
+    }
+    get_spline_pts_on(&SUL_DB, refno).await
+}
+
+/// [`get_spline_pts`] 的显式句柄版。
+pub async fn get_spline_pts_on(
+    db: &Surreal<Any>,
+    refno: RefnoEnum,
+) -> anyhow::Result<Vec<DVec3>> {
+    let mut response = db.query(
         format!("select value (select in.refno.POS as pos, order_num from <-pe_owner[where in.noun='SPINE'].in<-pe_owner order by order_num).pos from only {}", refno.to_pe_key())).await?;
     let pts: Vec<DVec3> = response.take(0)?;
     Ok(pts)
 }
 
 pub async fn get_spline_line_dir(refno: RefnoEnum) -> anyhow::Result<DVec3> {
-    let mut response = SUL_DB.query(
-        format!("select value (select in.refno.POS as pos, order_num from <-pe_owner[where in.noun='SPINE'].in<-pe_owner order by order_num).pos from only {}", refno.to_pe_key())).await?;
-    let pts: Vec<DVec3> = response.take(0)?;
+    let pts = get_spline_pts(refno).await?;
     if pts.len() == 2 {
         return Ok((pts[1] - pts[0]).normalize());
     }
     Err(anyhow!("没有找到两个点"))
 }
 
-#[cached(result = true)]
+/// 暂存读上下文在场时不经进程缓存直接算（内部读已被上下文路由到暂存库）；
+/// 否则走持久层缓存版，行为与历史一致。
 pub async fn get_world_transform(refno: RefnoEnum) -> anyhow::Result<Option<Transform>> {
+    if super::staging::active_staging_reads().is_some() {
+        return get_world_mat4_impl(refno, false)
+            .await
+            .map(|m| m.map(|x| Transform::from_matrix(x.as_mat4())));
+    }
+    get_world_transform_cached(refno).await
+}
+
+#[cached(name = "GET_WORLD_TRANSFORM", result = true)]
+pub(crate) async fn get_world_transform_cached(
+    refno: RefnoEnum,
+) -> anyhow::Result<Option<Transform>> {
     get_world_mat4(refno, false)
         .await
         .map(|m| m.map(|x| Transform::from_matrix(x.as_mat4())))
@@ -201,8 +225,27 @@ pub async fn get_world_transform(refno: RefnoEnum) -> anyhow::Result<Option<Tran
 //获得世界坐标系
 ///使用cache，需要从db manager里移除出来
 ///获得世界坐标系, 需要缓存数据，如果已经存在数据了，直接获取
-#[cached(result = true)]
+///
+/// ADR-017 读路由：暂存读上下文在场时绕开进程缓存直接计算——缓存键没有「世界」
+/// 维度，暂存世界的矩阵一旦写进全局缓存就会泄漏给持久层读者。内部的
+/// `get_ancestor_attmaps` / `query_ancestor_refnos` / `get_spline_pts` 各自带
+/// 上下文分流，计算体本身无需知道自己在哪个世界。
 pub async fn get_world_mat4(refno: RefnoEnum, is_local: bool) -> anyhow::Result<Option<DMat4>> {
+    if super::staging::active_staging_reads().is_some() {
+        return get_world_mat4_impl(refno, is_local).await;
+    }
+    get_world_mat4_cached(refno, is_local).await
+}
+
+#[cached(name = "GET_WORLD_MAT4", result = true)]
+pub(crate) async fn get_world_mat4_cached(
+    refno: RefnoEnum,
+    is_local: bool,
+) -> anyhow::Result<Option<DMat4>> {
+    get_world_mat4_impl(refno, is_local).await
+}
+
+async fn get_world_mat4_impl(refno: RefnoEnum, is_local: bool) -> anyhow::Result<Option<DMat4>> {
     #[cfg(feature = "profile")]
     let start_ancestors = std::time::Instant::now();
     let mut ancestors: Vec<NamedAttrMap> = super::get_ancestor_attmaps(refno).await?;

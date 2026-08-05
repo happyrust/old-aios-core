@@ -42,16 +42,34 @@ struct KV<K, V> {
     v: V,
 }
 
-///通过surql查询pe数据
-#[cached(result = true)]
+///通过surql查询pe数据。
+///
+/// ADR-017 读路由：暂存读上下文在场时改查暂存库且**不经**进程缓存（缓存键没有
+/// 「世界」维度，混写会互相污染）；上下文缺席时走持久层缓存版，行为与历史一致。
 pub async fn get_pe(refno: RefnoEnum) -> anyhow::Result<Option<SPdmsElement>> {
+    if let Some(ctx) = super::staging::active_staging_reads() {
+        return get_pe_on(ctx.db(), refno).await;
+    }
+    get_pe_cached(refno).await
+}
+
+/// [`get_pe`] 的显式句柄版（暂存预载、一致性套件用）。
+pub async fn get_pe_on(
+    db: &Surreal<Any>,
+    refno: RefnoEnum,
+) -> anyhow::Result<Option<SPdmsElement>> {
     let sql = format!(
         r#"select * omit id from only {} limit 1;"#,
         refno.to_pe_key()
     );
-    let mut response = SUL_DB.query(sql).await?;
+    let mut response = db.query(sql).await?;
     let pe: Option<SPdmsElement> = response.take(0)?;
     Ok(pe)
+}
+
+#[cached(name = "GET_PE", result = true)]
+async fn get_pe_cached(refno: RefnoEnum) -> anyhow::Result<Option<SPdmsElement>> {
+    get_pe_on(&SUL_DB, refno).await
 }
 
 pub async fn get_default_name(refno: RefnoEnum) -> anyhow::Result<Option<String>> {
@@ -72,10 +90,20 @@ pub async fn get_default_name(refno: RefnoEnum) -> anyhow::Result<Option<String>
 /// 
 /// # 错误
 /// * 如果查询失败会返回错误
-#[cached(result = true)]
 pub async fn query_ancestor_refnos(refno: RefnoEnum) -> anyhow::Result<Vec<RefnoEnum>> {
+    if let Some(ctx) = super::staging::active_staging_reads() {
+        return query_ancestor_refnos_on(ctx.db(), refno).await;
+    }
+    query_ancestor_refnos_cached(refno).await
+}
+
+/// [`query_ancestor_refnos`] 的显式句柄版。
+pub async fn query_ancestor_refnos_on(
+    db: &Surreal<Any>,
+    refno: RefnoEnum,
+) -> anyhow::Result<Vec<RefnoEnum>> {
     let sql = format!("return fn::ancestor({}).refno;", refno.to_pe_key());
-    match SUL_DB.query(&sql).await {
+    match db.query(&sql).await {
         Ok(mut response) => {
             match response.take::<Vec<Option<RefnoEnum>>>(0) {
                 Ok(s) => {
@@ -93,6 +121,11 @@ pub async fn query_ancestor_refnos(refno: RefnoEnum) -> anyhow::Result<Vec<Refno
             Err(anyhow!(e.to_string()))
         }
     }
+}
+
+#[cached(name = "QUERY_ANCESTOR_REFNOS", result = true)]
+async fn query_ancestor_refnos_cached(refno: RefnoEnum) -> anyhow::Result<Vec<RefnoEnum>> {
+    query_ancestor_refnos_on(&SUL_DB, refno).await
 }
 
 /// 查询指定类型的第一个祖先节点
@@ -170,8 +203,19 @@ pub async fn get_ancestor_types(refno: RefnoEnum) -> anyhow::Result<Vec<String>>
 /// # 错误
 /// * 如果查询失败会返回错误
 pub async fn get_ancestor_attmaps(refno: RefnoEnum) -> anyhow::Result<Vec<NamedAttrMap>> {
+    if let Some(ctx) = super::staging::active_staging_reads() {
+        return get_ancestor_attmaps_on(ctx.db(), refno).await;
+    }
+    get_ancestor_attmaps_on(&SUL_DB, refno).await
+}
+
+/// [`get_ancestor_attmaps`] 的显式句柄版。
+pub async fn get_ancestor_attmaps_on(
+    db: &Surreal<Any>,
+    refno: RefnoEnum,
+) -> anyhow::Result<Vec<NamedAttrMap>> {
     let sql = format!("return fn::ancestor({}).refno.*;", refno.to_pe_key());
-    let mut response = SUL_DB.query(sql).await?;
+    let mut response = db.query(sql).await?;
     let o: surrealdb::Value = response.take(0)?;
     let os: Vec<SurlValue> = o.into_inner().try_into().unwrap();
     let named_attmaps: Vec<NamedAttrMap> = os.into_iter().map(|x| x.into()).collect();
@@ -521,14 +565,29 @@ pub async fn get_ui_named_attmap(refno_enum: RefnoEnum) -> anyhow::Result<NamedA
     Ok(attmap)
 }
 
-///通过surql查询属性数据
-#[cached(result = true)]
+///通过surql查询属性数据。暂存读上下文在场时改查暂存库（不经进程缓存）。
 pub async fn get_named_attmap(refno: RefnoEnum) -> anyhow::Result<NamedAttrMap> {
+    if let Some(ctx) = super::staging::active_staging_reads() {
+        return get_named_attmap_on(ctx.db(), refno).await;
+    }
+    get_named_attmap_cached(refno).await
+}
+
+/// [`get_named_attmap`] 的显式句柄版。
+pub async fn get_named_attmap_on(
+    db: &Surreal<Any>,
+    refno: RefnoEnum,
+) -> anyhow::Result<NamedAttrMap> {
     let sql = format!(r#"(select * from {}.refno)[0];"#, refno.to_pe_key());
-    let mut response = SUL_DB.query(sql).await?;
+    let mut response = db.query(sql).await?;
     let o: surrealdb::Value = response.take(0)?;
     let named_attmap: NamedAttrMap = o.into_inner().into();
     Ok(named_attmap)
+}
+
+#[cached(name = "GET_NAMED_ATTMAP", result = true)]
+async fn get_named_attmap_cached(refno: RefnoEnum) -> anyhow::Result<NamedAttrMap> {
+    get_named_attmap_on(&SUL_DB, refno).await
 }
 
 /// Query an implicit element whose common `pe` row is absent.
@@ -586,9 +645,26 @@ pub async fn get_default_full_name(refno: RefnoEnum) -> anyhow::Result<String> {
     Ok(result.unwrap_or_default())
 }
 
-///通过surql查询属性数据，包含UDA数据
-#[cached(result = true)]
+///通过surql查询属性数据，包含UDA数据。暂存读上下文在场时改查暂存库（不经进程缓存）。
 pub(crate) async fn get_named_attmap_with_uda(
+    refno_enum: RefnoEnum,
+) -> anyhow::Result<NamedAttrMap> {
+    if let Some(ctx) = super::staging::active_staging_reads() {
+        return get_named_attmap_with_uda_on(ctx.db(), refno_enum).await;
+    }
+    get_named_attmap_with_uda_cached(refno_enum).await
+}
+
+#[cached(name = "GET_NAMED_ATTMAP_WITH_UDA", result = true)]
+pub(crate) async fn get_named_attmap_with_uda_cached(
+    refno_enum: RefnoEnum,
+) -> anyhow::Result<NamedAttrMap> {
+    get_named_attmap_with_uda_on(&SUL_DB, refno_enum).await
+}
+
+/// [`get_named_attmap_with_uda`] 的显式句柄版。
+pub(crate) async fn get_named_attmap_with_uda_on(
+    db: &Surreal<Any>,
     refno_enum: RefnoEnum,
 ) -> anyhow::Result<NamedAttrMap> {
     let sql = format!(
@@ -602,7 +678,7 @@ pub(crate) async fn get_named_attmap_with_uda(
         refno_enum.to_pe_key(),
         refno_enum.refno()
     );
-    let mut response = SUL_DB.query(sql).await?;
+    let mut response = db.query(sql).await?;
     //获得uda的 map
     let o: surrealdb::Value = response.take(0)?;
     let mut named_attmap: NamedAttrMap = o.into_inner().into();

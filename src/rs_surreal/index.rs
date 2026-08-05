@@ -1,12 +1,22 @@
 use crate::{options::DbOption, SUL_DB};
+use surrealdb::engine::any::Any;
+use surrealdb::Surreal;
+
+// 每个 DEFINE 入口都拆成「SUL_DB 包装 + `_on(db)` 显式句柄版」两层：暂存库初始化
+// 与 mem↔fork 一致性套件（ADR-017）要在非 SUL_DB 的库上重放同一组索引定义，
+// SQL 文本必须只有一份，否则两边迟早漂移。
 
 ///创建几何相关索引索引
 pub async fn create_geom_index() -> anyhow::Result<()> {
+    create_geom_index_on(&SUL_DB).await
+}
+
+pub async fn create_geom_index_on(db: &Surreal<Any>) -> anyhow::Result<()> {
     //针对一些特殊的表，需要先创建表，定义索引
     //DEFINE INDEX unique_geo_relate ON TABLE geo_relate COLUMNS in, geom_refno UNIQUE;
     // DEFINE INDEX unique_tubi_relate ON TABLE tubi_relate COLUMNS arrive, leave UNIQUE
     //DEFINE INDEX unique_inst_relate ON TABLE inst_relate COLUMNS in, out UNIQUE;
-    SUL_DB
+    db
         .query(
             r#"
                 DEFINE INDEX unique_neg_relate ON TABLE neg_relate COLUMNS in, out UNIQUE;
@@ -19,8 +29,12 @@ pub async fn create_geom_index() -> anyhow::Result<()> {
 }
 
 pub async fn define_room_index() -> anyhow::Result<()> {
+    define_room_index_on(&SUL_DB).await
+}
+
+pub async fn define_room_index_on(db: &Surreal<Any>) -> anyhow::Result<()> {
     //针对一些特殊的表，需要先创建表，定义索引
-    SUL_DB
+    db
         .query(
             r#"
         DEFINE INDEX unique_room_relate ON TABLE room_relate COLUMNS in, out UNIQUE;
@@ -34,8 +48,12 @@ pub async fn define_room_index() -> anyhow::Result<()> {
 
 /// 创建 pe_owner 的唯一性索引，in, out的组合索引
 pub async fn define_owner_index() -> anyhow::Result<()> {
+    define_owner_index_on(&SUL_DB).await
+}
+
+pub async fn define_owner_index_on(db: &Surreal<Any>) -> anyhow::Result<()> {
     //针对一些特殊的表，需要先创建表，定义索引
-    SUL_DB
+    db
         .query(r#"DEFINE INDEX IF NOT EXISTS unique_pe_owner ON TABLE pe_owner COLUMNS in, out UNIQUE"#)
         .await?
         .check()?;
@@ -43,8 +61,12 @@ pub async fn define_owner_index() -> anyhow::Result<()> {
 }
 
 pub async fn define_fullname_index() -> anyhow::Result<()> {
+    define_fullname_index_on(&SUL_DB).await
+}
+
+pub async fn define_fullname_index_on(db: &Surreal<Any>) -> anyhow::Result<()> {
     //针对一些特殊的表，需要先创建表，定义索引
-    SUL_DB
+    db
         .query(r#"DEFINE ANALYZER name_fulltext TOKENIZERS class FILTERS lowercase;
                     DEFINE INDEX fulltext_name ON TABLE pe FIELDS name SEARCH ANALYZER name_fulltext BM25 HIGHLIGHTS;
                 "#)
@@ -54,8 +76,12 @@ pub async fn define_fullname_index() -> anyhow::Result<()> {
 }
 
 pub async fn define_pe_index() -> anyhow::Result<()> {
+    define_pe_index_on(&SUL_DB).await
+}
+
+pub async fn define_pe_index_on(db: &Surreal<Any>) -> anyhow::Result<()> {
     //针对一些特殊的表，需要先创建表，定义索引
-    SUL_DB
+    db
         .query(
             r#"
         DEFINE INDEX IF NOT EXISTS pe_name_index ON TABLE pe COLUMNS name;
@@ -76,9 +102,14 @@ pub async fn define_pe_index() -> anyhow::Result<()> {
         .check()?;
     Ok(())
 }
+
 pub async fn define_ses_index() -> anyhow::Result<()> {
+    define_ses_index_on(&SUL_DB).await
+}
+
+pub async fn define_ses_index_on(db: &Surreal<Any>) -> anyhow::Result<()> {
     //针对一些特殊的表，需要先创建表，定义索引
-    SUL_DB
+    db
         .query(
             r#"
         DEFINE INDEX date_index ON ses COLUMNS date;

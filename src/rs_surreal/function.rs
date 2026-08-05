@@ -2,8 +2,17 @@ use std::io::Read;
 use std::path::PathBuf;
 use crate::{NamedAttrMap, RefU64, SurlValue, SUL_DB};
 use cached::proc_macro::cached;
+use surrealdb::engine::any::Any;
+use surrealdb::Surreal;
 
 pub async fn define_common_functions() -> anyhow::Result<()> {
+    define_common_functions_on(&SUL_DB).await
+}
+
+/// 与 [`define_common_functions`] 同一套脚本（CWD 下 `resource/surreal/*`，按目录
+/// 顺序执行），但落在显式给定的句柄上。暂存库初始化与 mem↔fork 一致性套件
+/// （ADR-017）都要在非 `SUL_DB` 的库上重放同一组 fn:: 定义，脚本来源必须唯一。
+pub async fn define_common_functions_on(db: &Surreal<Any>) -> anyhow::Result<()> {
     let target_dir = std::fs::read_dir("resource/surreal")?.into_iter()
         .map(|entry| {
             let entry = entry.unwrap();
@@ -14,7 +23,7 @@ pub async fn define_common_functions() -> anyhow::Result<()> {
         let mut file = std::fs::File::open(file)?;
         let mut content = String::new();
         file.read_to_string(&mut content)?;
-        SUL_DB.query(content).await?;
+        db.query(content).await?;
     }
     Ok(())
 }
@@ -27,7 +36,12 @@ pub async fn define_common_functions() -> anyhow::Result<()> {
 /// 
 /// 如果数据库操作失败,将返回错误
 pub async fn define_dbnum_event() -> anyhow::Result<()> {
-    SUL_DB
+    define_dbnum_event_on(&SUL_DB).await
+}
+
+/// [`define_dbnum_event`] 的显式句柄版（ADR-017 暂存库初始化用）。
+pub async fn define_dbnum_event_on(db: &Surreal<Any>) -> anyhow::Result<()> {
+    db
         .query(r#"
         DEFINE EVENT OVERWRITE update_dbnum_event ON pe WHEN $event = "CREATE" OR $event = "UPDATE" OR $event = "DELETE" THEN {
             -- 获取当前记录的 dbnum

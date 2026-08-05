@@ -32,6 +32,9 @@ pub mod topology;
 
 pub mod operation;
 
+/// ADR-017 暂存读路由（STAGE_DB 句柄与批次执行上下文）。
+pub mod staging;
+
 pub use cate::*;
 pub use e3d_db::*;
 pub use geom::*;
@@ -44,6 +47,7 @@ pub use point::*;
 pub use query::*;
 pub use resolve::*;
 pub use spatial::*;
+pub use staging::*;
 pub use uda::*;
 pub use topology::*;
 
