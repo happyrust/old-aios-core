@@ -33,7 +33,7 @@ pub async fn query_tubi_insts_by_brans(
     let sql = format!(
         r#"
              select
-                in.id as refno,
+                in as refno,
                 in.old_pe as old_refno,
                 in.owner.noun as generic, aabb.d as world_aabb, world_trans.d as world_trans,
                 record::id(out) as geo_hash,
@@ -163,7 +163,7 @@ pub async fn query_insts(
         format!(
             r#"
             select
-                in.id as refno,
+                in as refno,
                 in.old_pe as old_refno,
                 in.owner as owner, generic, aabb.d as world_aabb, world_trans.d as world_trans, out.ptset.d.pt as pts,
                 if booled_id != none {{ [{{ "geo_hash": booled_id }}] }} else {{ (select trans.d as transform, record::id(out) as geo_hash from out->geo_relate where visible && out.meshed && trans.d != none && geo_type='Pos')  }} as insts,
@@ -186,7 +186,7 @@ pub async fn query_insts(
         )
     };
     // println!("Query insts sql: {}", &sql);
-    let mut response = SUL_DB.query(sql).await?;
+    let mut response = super::staging::data_db().query(sql).await?;
     let mut geom_insts: Vec<GeomInstQuery> = response.take(0)?;
     // dbg!(&geom_insts);
 
@@ -311,6 +311,22 @@ pub async fn query_insts_by_zone(
 mod tests {
     use super::*;
     use crate::{init_test_surreal, RefnoEnum};
+
+    #[tokio::test]
+    async fn query_insts_uses_the_staged_read_database() -> anyhow::Result<()> {
+        let db = surrealdb::engine::any::connect("mem://").await?;
+        db.use_ns("test").use_db("staged_insts").await?;
+        let context = super::super::staging::StagingReadContext::new(db, "staged_insts");
+        let refnos = vec![RefnoEnum::from("4000000001/20")];
+
+        let rows = super::super::staging::with_staging_reads(
+            context,
+            query_insts(&refnos, true),
+        )
+        .await?;
+        assert!(rows.is_empty());
+        Ok(())
+    }
 
     #[tokio::test]
     async fn test_query_insts() -> anyhow::Result<()> {
