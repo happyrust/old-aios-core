@@ -3,7 +3,7 @@ use crate::pe::SPdmsElement;
 use crate::{init_test_surreal, query_filter_deep_children, types::*};
 use crate::{pdms_types::*, to_table_key, to_table_keys};
 use crate::{NamedAttrMap, RefnoEnum};
-use crate::{SurlValue, SUL_DB};
+use crate::SurlValue;
 use bevy_transform::components::Transform;
 use cached::proc_macro::cached;
 use glam::Vec3;
@@ -43,7 +43,7 @@ pub async fn fetch_loops_and_height(refno: RefnoEnum) -> anyhow::Result<(Vec<Vec
         refno.to_pe_key()
     );
     // println!(" fetch_loops_and_height sql is {}", &sql);
-    let mut response = SUL_DB.query(&sql).await.unwrap();
+    let mut response = super::staging::data_db().query(&sql).await.unwrap();
     let points: Vec<Vec<Vec3>> = response.take(0)?;
     let height: Option<f32> = response.take(1)?;
 
@@ -145,7 +145,7 @@ pub async fn query_refno_has_pos_neg_map(
          refnos.iter().map(|x| x.to_pe_key()).collect::<Vec<_>>().join(","),
      );
     // println!("query_refno_has_pos_neg_map sql is {}", &sql);
-    let mut response = SUL_DB.query(&sql).await?;
+    let mut response = super::staging::data_db().query(&sql).await?;
     let mut result = HashMap::new();
     if let Ok(r) = response.take::<Vec<RefnoHasNegPosInfo>>(0) {
         for info in r {
@@ -181,7 +181,7 @@ pub async fn query_bran_children_point_map(refno: RefnoEnum) -> anyhow::Result<V
         "select in.id as refno,in.id->inst_relate.out.ptset[0]?:{{}} as ptset_map,in.noun as att_type from pe:{}<-pe_owner;",
         refno.to_string()
     );
-    let mut response = SUL_DB.query(&sql).await?;
+    let mut response = super::staging::data_db().query(&sql).await?;
     match response.take(0) {
         Ok(r) => Ok(r),
         Err(e) => {
@@ -206,7 +206,7 @@ pub async fn query_point_map(refno: RefnoEnum) -> anyhow::Result<Option<InstPoin
         "select id as refno,id->inst_relate.out.ptset[0]?:{{}} as ptset_map,noun as att_type from {};",
         refno.to_pe_key()
     );
-    let mut response = SUL_DB.query(&sql).await?;
+    let mut response = super::staging::data_db().query(&sql).await?;
     let Ok(mut result) = response.take::<Vec<InstPointMap>>(0) else {
         dbg!(format!("sql 查询出错: {}", sql));
         return Ok(None);
@@ -229,7 +229,7 @@ pub async fn query_refnos_point_map(
         "select id as refno,id->inst_relate.out.ptset[0]?:{{}} as ptset_map,noun as att_type from [{}];",
         refnos.join(",")
     );
-    let mut response = SUL_DB.query(&sql).await?;
+    let mut response = super::staging::data_db().query(&sql).await?;
     let Ok(result) = response.take::<Vec<InstPointMap>>(0) else {
         dbg!(format!("sql 查询出错: {}", sql));
         return Ok(HashMap::default());
@@ -243,7 +243,7 @@ pub async fn query_refnos_by_geo_hash(id: &str) -> anyhow::Result<Vec<RefnoEnum>
         "array::distinct(array::flatten(select value in<-inst_relate.in from inst_geo:⟨{}⟩<-geo_relate));",
         id
     );
-    let mut response = SUL_DB.query(&sql).await?;
+    let mut response = super::staging::data_db().query(&sql).await?;
     let result: Vec<RefnoEnum> = response.take(0)?;
     Ok(result)
 }
@@ -301,7 +301,7 @@ pub async fn query_ptset(refno: RefnoEnum) -> anyhow::Result<Option<PtsetResult>
         "(select world_trans.d as transform, object::values(out.ptset?:{{}}).pt as points from {0})[0]",
         to_table_key!(refno, "inst_relate")
     );
-    let mut response = SUL_DB.query(&sql).await?;
+    let mut response = super::staging::data_db().query(&sql).await?;
     let result: Option<PtsetResult> = response.take(0)?;
     // dbg!(&result);
     Ok(result)
@@ -313,7 +313,7 @@ pub async fn query_key_points(refno: RefnoEnum) -> anyhow::Result<Option<Vec<Vec
     //     "select value inst_relate.pts.*.d from {}",
     //     refno.to_pe_key()
     // );
-    // let mut response = SUL_DB.query(&sql).await?;
+    // let mut response = super::staging::data_db().query(&sql).await?;
     // let result: Option<Vec<Vec3>> = response.take(0)?;
     Ok(None)
 }

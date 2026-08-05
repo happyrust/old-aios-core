@@ -24,13 +24,28 @@ use surrealdb::sql::Thing;
 use crate::query_ancestor_refnos;
 
 #[inline]
-#[cached(result = true)]
 pub async fn query_filter_all_bran_hangs(refno: RefnoEnum) -> anyhow::Result<Vec<RefnoEnum>> {
     query_filter_deep_children(refno, &["BRAN", "HANG"]).await
 }
 
-#[cached(result = true)]
 pub async fn query_deep_children_refnos(refno: RefnoEnum) -> anyhow::Result<Vec<RefnoEnum>> {
+    if super::staging::active_staging_reads().is_some() {
+        query_deep_children_refnos_uncached(refno).await
+    } else {
+        query_deep_children_refnos_cached(refno).await
+    }
+}
+
+#[cached(name = "QUERY_DEEP_CHILDREN_REFNOS", result = true)]
+pub async fn query_deep_children_refnos_cached(
+    refno: RefnoEnum,
+) -> anyhow::Result<Vec<RefnoEnum>> {
+    query_deep_children_refnos_uncached(refno).await
+}
+
+async fn query_deep_children_refnos_uncached(
+    refno: RefnoEnum,
+) -> anyhow::Result<Vec<RefnoEnum>> {
     let pe_key = refno.to_pe_key();
     let sql = if refno.is_latest() {
         format!(
@@ -53,7 +68,7 @@ pub async fn query_deep_children_refnos(refno: RefnoEnum) -> anyhow::Result<Vec<
     };
     let idx = if refno.is_latest() { 0 } else { 2 };
     // println!("query_deep_children_refnos sql is {}", &sql);
-    return match SUL_DB.query(&sql).await {
+    return match super::staging::data_db().query(&sql).await {
         Ok(mut response) => match response.take::<Vec<RefnoEnum>>(idx) {
             Ok(data) => Ok(data),
             Err(e) => {
@@ -83,7 +98,7 @@ pub async fn query_deep_children_refnos_pbs(refno: Thing) -> anyhow::Result<Vec<
                    from only {pe_key} ) )[? !deleted];
             "#
     );
-    return match SUL_DB.query(&sql).await {
+    return match super::staging::data_db().query(&sql).await {
         Ok(mut response) => match response.take::<Vec<Thing>>(0) {
             Ok(data) => Ok(data),
             Err(e) => {
@@ -116,7 +131,7 @@ pub async fn query_filter_deep_children(
         format!(r#"select value id from [{pe_keys}] where noun in [{nouns_str}]"#)
     };
     // println!("query_filter_deep_children sql is {}", &sql);
-    match SUL_DB.query(&sql).with_stats().await {
+    match super::staging::data_db().query(&sql).with_stats().await {
         Ok(mut response) => {
             if let Some((stats, Ok(result))) = response.take::<Vec<RefnoEnum>>(0) {
                 return Ok(result);
@@ -143,7 +158,7 @@ pub async fn query_filter_deep_children_atts(
         let nouns_str = rs_surreal::convert_to_sql_str_array(nouns);
         let sql = format!(r#"select value refno.* from [{pe_keys}] where noun in [{nouns_str}]"#);
         // println!("query_filter_deep_children_atts sql is {}", &sql);
-        match SUL_DB.query(&sql).with_stats().await {
+        match super::staging::data_db().query(&sql).with_stats().await {
             Ok(mut response) => {
                 if let Some((stats, Ok(value))) = response.take::<surrealdb::Value>(0) {
                     let result: Vec<surrealdb::sql::Value> = value.into_inner().try_into().unwrap();
@@ -169,7 +184,7 @@ pub async fn query_ele_filter_deep_children_pbs(
     let nouns_str = rs_surreal::convert_to_sql_str_array(nouns);
     let sql = format!(r#"select * from [{pe_keys}] where noun in [{nouns_str}]"#);
     // println!("sql is {}", &sql);
-    match SUL_DB.query(&sql).with_stats().await {
+    match super::staging::data_db().query(&sql).with_stats().await {
         Ok(mut response) => {
             if let Some((stats, Ok(result))) = response.take::<Vec<PbsElement>>(0) {
                 return Ok(result);
@@ -193,7 +208,7 @@ pub async fn query_ele_filter_deep_children(
     let nouns_str = rs_surreal::convert_to_sql_str_array(nouns);
     let sql = format!(r#"select * from [{pe_keys}] where noun in [{nouns_str}]"#);
     // println!("sql is {}", &sql);
-    let mut response = SUL_DB.query(&sql).with_stats().await.unwrap();
+    let mut response = super::staging::data_db().query(&sql).with_stats().await.unwrap();
     if let Some((stats, Ok(result))) = response.take::<Vec<SPdmsElement>>(0) {
         return Ok(result);
     }
@@ -216,7 +231,7 @@ pub async fn query_filter_deep_children_by_path(
             "select value refno from array::flatten(object::values(select {relate_sql} from only {pe_key})) where noun in [{nouns_str}]",
         );
         // println!("sql is {}", &sql);
-        let mut response = SUL_DB.query(&sql).with_stats().await?;
+        let mut response = super::staging::data_db().query(&sql).with_stats().await?;
         if let Some((stats, Ok(result))) = response.take::<Vec<RefnoEnum>>(0) {
             return Ok(result);
         }
@@ -242,7 +257,7 @@ pub async fn query_deep_children_refnos_filter_spre(
     if filter {
         sql.push_str(" and array::len(->inst_relate) = 0 and array::len(->tubi_relate) = 0");
     }
-    let mut response = SUL_DB.query(&sql).await?;
+    let mut response = super::staging::data_db().query(&sql).await?;
     let result: Vec<RefnoEnum> = response.take(1)?;
     Ok(result)
 }
@@ -281,7 +296,7 @@ async fn query_versioned_deep_children_filter_inst(
         sql.push_str("array::len(->inst_relate) = 0 and array::len(->tubi_relate) = 0");
     }
     // println!("query_deep_children_filter_inst sql is: {}", &sql);
-    let mut response = SUL_DB.query(&sql).await?;
+    let mut response = super::staging::data_db().query(&sql).await?;
     // dbg!(&response);
     let result: Vec<RefnoEnum> = response.take(1)?;
     Ok(result)
@@ -309,7 +324,7 @@ async fn query_deep_children_filter_inst(
         sql.push_str(" and array::len(->inst_relate) = 0 and array::len(->tubi_relate) = 0");
     }
     // println!("query_deep_children_filter_inst sql is: {}", &sql);
-    let mut response = SUL_DB.query(&sql).await?;
+    let mut response = super::staging::data_db().query(&sql).await?;
     // dbg!(&response);
     let result: Vec<RefU64> = response.take(1)?;
     Ok(result)
@@ -440,7 +455,7 @@ pub async fn query_filter_ancestors(
         "select value refno from [{}] where refno.TYPE in [{nouns_str}] or refno.TYPEX in [{nouns_str}]",
         ancestors.iter().map(|x| x.to_pe_key()).join(","),
     );
-    let mut response = SUL_DB.query(&sql).await?;
+    let mut response = super::staging::data_db().query(&sql).await?;
     let reuslt: Vec<RefnoEnum> = response.take(0)?;
 
     Ok(reuslt)
@@ -469,7 +484,7 @@ pub async fn get_uda_type_refnos_from_select_refnos(
             .join(",");
         let sql = format!("let $ukey = select value UKEY from UDET where DYUDNA = '{}';
         select refno,fn::default_name(id) as name,noun,owner,0 as children_count from [{}] where refno.TYPEX in $ukey;", &uda_type, refnos_str);
-        match SUL_DB.query(&sql).await {
+        match super::staging::data_db().query(&sql).await {
             Ok(mut response) => match response.take::<Vec<EleTreeNode>>(1) {
                 Ok(query_r) => {
                     let mut query_r = query_r.into_iter().map(|x| x.into()).collect();

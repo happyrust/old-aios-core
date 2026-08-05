@@ -80,6 +80,13 @@ pub fn active_staging_reads() -> Option<StagingReadContext> {
     STAGING_READS.try_with(|ctx| ctx.clone()).ok()
 }
 
+/// 数据面当前读库；控制面继续显式使用 `SUL_DB`。
+pub(crate) fn data_db() -> Surreal<Any> {
+    active_staging_reads()
+        .map(|context| context.db().clone())
+        .unwrap_or_else(|| crate::SUL_DB.clone())
+}
+
 /// `tokio::spawn` 不继承 task-local；生成链的子任务统一从这里派生，避免上下文
 /// 在并行边界丢失后静默回到持久层。
 pub fn spawn_with_staging_reads<F>(future: F) -> tokio::task::JoinHandle<F::Output>

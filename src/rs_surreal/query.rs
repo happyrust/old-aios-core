@@ -266,32 +266,47 @@ pub async fn get_type_names(
     refnos: impl Iterator<Item=&RefnoEnum>,
 ) -> anyhow::Result<Vec<String>> {
     let pe_keys = refnos.into_iter().map(|x| x.to_pe_key()).join(",");
-    let mut response = SUL_DB
+    let mut response = super::staging::data_db()
         .query(format!(r#"select value noun from [{}]"#, pe_keys))
         .await?;
     let type_names: Vec<String> = response.take(0)?;
     Ok(type_names)
 }
 
-#[cached(result = true)]
 pub async fn get_owner_type_name(refno: RefU64) -> anyhow::Result<String> {
     let sql = format!(
         "return (select value owner.noun from only (type::thing('pe', {})));",
         refno.to_pe_key()
     );
-    let mut response = SUL_DB.query(sql).await?;
+    let mut response = super::staging::data_db().query(sql).await?;
     // dbg!(&response);
     let type_name: Option<String> = response.take(0)?;
     Ok(type_name.unwrap_or_default())
 }
 
-#[cached(result = true)]
 pub async fn get_self_and_owner_type_name(refno: RefnoEnum) -> anyhow::Result<Vec<String>> {
+    if super::staging::active_staging_reads().is_some() {
+        get_self_and_owner_type_name_uncached(refno).await
+    } else {
+        get_self_and_owner_type_name_cached(refno).await
+    }
+}
+
+#[cached(name = "GET_SELF_AND_OWNER_TYPE_NAME", result = true)]
+async fn get_self_and_owner_type_name_cached(
+    refno: RefnoEnum,
+) -> anyhow::Result<Vec<String>> {
+    get_self_and_owner_type_name_uncached(refno).await
+}
+
+async fn get_self_and_owner_type_name_uncached(
+    refno: RefnoEnum,
+) -> anyhow::Result<Vec<String>> {
     let sql = format!(
         "select value [noun, owner.noun ?? ''] from only {} limit 1",
         refno.to_pe_key()
     );
-    let mut response = SUL_DB.query(sql).await?;
+    let mut response = super::staging::data_db().query(sql).await?;
     let type_name: Vec<String> = response.take(0)?;
     Ok(type_name)
 }
@@ -991,8 +1006,20 @@ pub async fn clear_all_caches_batch(refnos: &[RefnoEnum]) {
 }
 
 ///获得children
-#[cached(result = true)]
 pub async fn get_children_refnos(refno: RefnoEnum) -> anyhow::Result<Vec<RefnoEnum>> {
+    if super::staging::active_staging_reads().is_some() {
+        get_children_refnos_uncached(refno).await
+    } else {
+        get_children_refnos_cached(refno).await
+    }
+}
+
+#[cached(name = "GET_CHILDREN_REFNOS", result = true)]
+async fn get_children_refnos_cached(refno: RefnoEnum) -> anyhow::Result<Vec<RefnoEnum>> {
+    get_children_refnos_uncached(refno).await
+}
+
+async fn get_children_refnos_uncached(refno: RefnoEnum) -> anyhow::Result<Vec<RefnoEnum>> {
     let sql = if refno.is_latest() {
         format!(
             r#"select value in from {}<-pe_owner  where in.id!=none and record::exists(in.id) and !in.deleted"#,
@@ -1008,7 +1035,7 @@ pub async fn get_children_refnos(refno: RefnoEnum) -> anyhow::Result<Vec<RefnoEn
             refno.to_pe_key(),
         )
     };
-    let mut response = SUL_DB.query(sql).await?;
+    let mut response = super::staging::data_db().query(sql).await?;
     let idx = if refno.is_latest() { 0 } else { 1 };
     let refnos: Vec<RefnoEnum> = response.take(idx)?;
     Ok(refnos)
@@ -1062,7 +1089,7 @@ pub async fn query_group_by_cata_hash(
             chunk.join(",")
         );
         // println!("query_group_by_cata_hash sql is {}", &sql);
-        let mut response = SUL_DB.query(&sql).await?;
+        let mut response = super::staging::data_db().query(&sql).await?;
         // dbg!(&response);
         // let d: Vec<KV<(String, bool, Option<BTreeMap<i32, CateAxisParam>>), Vec<RefU64>>> =
         //     response.take(1).unwrap();
