@@ -79,3 +79,19 @@ where
 pub fn active_staging_reads() -> Option<StagingReadContext> {
     STAGING_READS.try_with(|ctx| ctx.clone()).ok()
 }
+
+/// `tokio::spawn` 不继承 task-local；生成链的子任务统一从这里派生，避免上下文
+/// 在并行边界丢失后静默回到持久层。
+pub fn spawn_with_staging_reads<F>(future: F) -> tokio::task::JoinHandle<F::Output>
+where
+    F: std::future::Future + Send + 'static,
+    F::Output: Send + 'static,
+{
+    let context = active_staging_reads();
+    tokio::spawn(async move {
+        match context {
+            Some(context) => with_staging_reads(context, future).await,
+            None => future.await,
+        }
+    })
+}

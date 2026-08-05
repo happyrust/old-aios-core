@@ -229,12 +229,30 @@ pub async fn get_ancestor_attmaps_on(
 ///
 /// # 返回值
 /// * `String` - 类型名称，如果未找到则返回"unset"
-#[cached(result = true)]
 pub async fn get_type_name(refno: RefnoEnum) -> anyhow::Result<String> {
+    if let Some(ctx) = super::staging::active_staging_reads() {
+        return get_type_name_on(ctx.db(), refno)
+            .await?
+            .ok_or_else(|| anyhow!("staging read miss: type name for {refno}"));
+    }
+    get_type_name_cached(refno).await
+}
+
+pub async fn get_type_name_on(
+    db: &Surreal<Any>,
+    refno: RefnoEnum,
+) -> anyhow::Result<Option<String>> {
     let sql = format!("select value noun from only {} limit 1", refno.to_pe_key());
-    let mut response = SUL_DB.query(sql).await?;
+    let mut response = db.query(sql).await?;
     let type_name: Option<String> = response.take(0)?;
-    Ok(type_name.unwrap_or("unset".to_owned()))
+    Ok(type_name)
+}
+
+#[cached(name = "GET_TYPE_NAME", result = true)]
+async fn get_type_name_cached(refno: RefnoEnum) -> anyhow::Result<String> {
+    Ok(get_type_name_on(&SUL_DB, refno)
+        .await?
+        .unwrap_or_else(|| "unset".to_owned()))
 }
 
 /// 批量获取多个refno的类型名称
@@ -580,14 +598,20 @@ pub async fn get_named_attmap_on(
 ) -> anyhow::Result<NamedAttrMap> {
     let sql = format!(r#"(select * from {}.refno)[0];"#, refno.to_pe_key());
     let mut response = db.query(sql).await?;
-    let o: surrealdb::Value = response.take(0)?;
-    let named_attmap: NamedAttrMap = o.into_inner().into();
+    let o: Value = response.take::<surrealdb::Value>(0)?.into_inner();
+    if matches!(o, Value::None) {
+        return Err(anyhow!("staging read miss: named attributes for {refno}"));
+    }
+    let named_attmap: NamedAttrMap = o.into();
     Ok(named_attmap)
 }
 
 #[cached(name = "GET_NAMED_ATTMAP", result = true)]
 async fn get_named_attmap_cached(refno: RefnoEnum) -> anyhow::Result<NamedAttrMap> {
-    get_named_attmap_on(&SUL_DB, refno).await
+    let sql = format!(r#"(select * from {}.refno)[0];"#, refno.to_pe_key());
+    let mut response = SUL_DB.query(sql).await?;
+    let o: surrealdb::Value = response.take(0)?;
+    Ok(o.into_inner().into())
 }
 
 /// Query an implicit element whose common `pe` row is absent.
@@ -598,6 +622,9 @@ pub async fn get_implicit_named_attmap(
     refno: RefnoEnum,
     noun: &str,
 ) -> anyhow::Result<NamedAttrMap> {
+    if let Some(ctx) = super::staging::active_staging_reads() {
+        return get_implicit_named_attmap_on(ctx.db(), refno, noun).await;
+    }
     let sql = format!(
         "SELECT * FROM ONLY type::thing('{}', record::id({})) LIMIT 1;",
         noun,
@@ -606,6 +633,26 @@ pub async fn get_implicit_named_attmap(
     let mut response = SUL_DB.query(sql).await?;
     let o: surrealdb::Value = response.take(0)?;
     Ok(o.into_inner().into())
+}
+
+pub async fn get_implicit_named_attmap_on(
+    db: &Surreal<Any>,
+    refno: RefnoEnum,
+    noun: &str,
+) -> anyhow::Result<NamedAttrMap> {
+    let sql = format!(
+        "SELECT * FROM ONLY type::thing('{}', record::id({})) LIMIT 1;",
+        noun,
+        refno.to_pe_key()
+    );
+    let mut response = db.query(sql).await?;
+    let o: Value = response.take::<surrealdb::Value>(0)?.into_inner();
+    if matches!(o, Value::None) {
+        return Err(anyhow!(
+            "staging read miss: implicit {noun} attributes for {refno}"
+        ));
+    }
+    Ok(o.into())
 }
 
 #[cached(result = true)]
