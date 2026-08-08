@@ -7,8 +7,39 @@ use surrealdb::Connection;
 use surrealdb::engine::any::Any;
 use surrealdb::Surreal;
 
-const INST_META_COMPAT_SQL: &str = include_str!("inst_meta_compat.surql");
-const ANC_U64_DEFINE: &str = "DEFINE FUNCTION OVERWRITE fn::anc_u64";
+const REFNO_U64_DEFINE: &str = r#"
+DEFINE FUNCTION OVERWRITE fn::refno_u64($r: record) {
+    LET $raw = record::id($r);
+    LET $id = if type::is::array($raw) { <string> array::at($raw, 0) } else { <string> $raw };
+    LET $parts = string::split($id, '_');
+    RETURN <int> $parts[0] * 4294967296 + <int> $parts[1];
+};
+"#;
+
+const ANC_U64_DEFINE: &str = r#"
+DEFINE FUNCTION OVERWRITE fn::anc_u64($r: record) {
+    LET $chain = if $r.id == none { [] } else {
+        array::complement(
+            (SELECT VALUE [id,
+                owner,
+                owner.owner,
+                owner.owner.owner,
+                owner.owner.owner.owner,
+                owner.owner.owner.owner.owner,
+                owner.owner.owner.owner.owner.owner,
+                owner.owner.owner.owner.owner.owner.owner,
+                owner.owner.owner.owner.owner.owner.owner.owner,
+                owner.owner.owner.owner.owner.owner.owner.owner.owner,
+                owner.owner.owner.owner.owner.owner.owner.owner.owner.owner,
+                owner.owner.owner.owner.owner.owner.owner.owner.owner.owner.owner,
+                owner.owner.owner.owner.owner.owner.owner.owner.owner.owner.owner.owner]
+             FROM ONLY $r LIMIT 1),
+            [NONE, pe:0_0]
+        )
+    };
+    RETURN array::map($chain, |$a| fn::refno_u64($a));
+};
+"#;
 
 pub async fn define_common_functions() -> anyhow::Result<()> {
     define_common_functions_on(&SUL_DB).await
@@ -36,13 +67,6 @@ pub async fn define_common_functions_on(db: &Surreal<Any>) -> anyhow::Result<()>
         println!("已从二进制内置定义补装缺失的 inst_meta 兼容函数");
     }
     Ok(())
-}
-
-fn inst_meta_definitions() -> (&'static str, &'static str) {
-    let anc_at = INST_META_COMPAT_SQL
-        .find(ANC_U64_DEFINE)
-        .expect("内置 inst_meta_compat.surql 必须包含 fn::anc_u64");
-    (&INST_META_COMPAT_SQL[..anc_at], &INST_META_COMPAT_SQL[anc_at..])
 }
 
 async fn function_exists<C: Connection>(
@@ -85,14 +109,12 @@ pub async fn ensure_inst_meta_functions_on<C: Connection>(
     let refno_probe = "RETURN fn::refno_u64(type::thing('pe','1_1'));";
     let anc_probe = "RETURN fn::anc_u64(type::thing('pe','1_1'));";
     let mut installed = false;
-    let (refno_define, anc_define) = inst_meta_definitions();
-
     if !function_exists(db, "fn::refno_u64", refno_probe).await? {
-        define_checked(db, "fn::refno_u64", refno_define).await?;
+        define_checked(db, "fn::refno_u64", REFNO_U64_DEFINE).await?;
         installed = true;
     }
     if !function_exists(db, "fn::anc_u64", anc_probe).await? {
-        define_checked(db, "fn::anc_u64", anc_define).await?;
+        define_checked(db, "fn::anc_u64", ANC_U64_DEFINE).await?;
         installed = true;
     }
 
