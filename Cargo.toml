@@ -156,6 +156,9 @@ sqlx = { version = "0.7.4", default-features = false, features = [
 ] }
 duckdb = { version = "1.2.2" }
 
+[dev-dependencies]
+surrealdb = { git = "https://gitee.com/happydpc/surrealdb", default-features = false, features = ["kv-mem"] }
+
 
 #[patch."https://gitee.com/happydpc/surrealdb.git"]
 #surrealdb = { path = "../../surrealdb/crates/sdk" }
