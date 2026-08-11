@@ -854,7 +854,6 @@ pub fn gen_polyline_original(pts: &Vec<Vec3>) -> anyhow::Result<Polyline> {
         return Err(anyhow!("wire 顶点数量不够，小于3。"));
     }
     let first_pt = pts[0].as_dvec3();
-    let mut has_frad = first_pt.z > 0.0;
     let mut new_pts = vec![first_pt];
     //第一遍就应该去掉重复的点
     for i in 1..=pts.len() {
@@ -876,9 +875,6 @@ pub fn gen_polyline_original(pts: &Vec<Vec3>) -> anyhow::Result<Polyline> {
             continue;
         }
 
-        if pt.z > 0.0 {
-            has_frad = true;
-        }
         if i < pts.len() {
             new_pts.push(pt);
         }
@@ -971,37 +967,6 @@ pub fn gen_polyline_original(pts: &Vec<Vec3>) -> anyhow::Result<Polyline> {
     let mut need_trim = basic_inter_len != 0 || overlap_inter_len != 0;
     if basic_inter_len == 0 && overlap_inter_len == 0 {
         return Ok(polyline);
-    } else if !has_frad {
-        // dbg!(&intrs.basic_intersects);
-        let removed_idx = intrs
-            .basic_intersects
-            .iter()
-            .map(|x| x.start_index1)
-            .collect::<HashSet<usize>>();
-        let mut new_polyline = Polyline::new_closed();
-        new_polyline.vertex_data = polyline
-            .vertex_data
-            .clone()
-            .into_iter()
-            .enumerate()
-            .filter(|(index, _)| !removed_idx.contains(index))
-            .map(|(_, value)| value)
-            .collect();
-
-        if let Ok(mut new_intrs) = std::panic::catch_unwind(
-            (|| global_self_intersects(&new_polyline, &new_polyline.create_approx_aabb_index())),
-        ) {
-            let basic_inter_len = new_intrs.basic_intersects.len();
-            let overlap_inter_len = new_intrs.overlapping_intersects.len();
-            if basic_inter_len == 0 && overlap_inter_len == 0 {
-                return Ok(new_polyline);
-            } else {
-                #[cfg(feature = "debug_wire")]
-                println!("有问题的wire: {}", polyline_to_debug_json_str(&polyline));
-                return Err(anyhow!("有相交没有fillet的线段。修复失败"));
-            }
-        };
-        return Err(anyhow!("有相交没有fillet的线段。修复失败"));
     }
     #[cfg(feature = "debug_wire")]
     dbg!(&intrs);
@@ -1823,4 +1788,33 @@ fn gen_polyline_handles_fillet_radius_equal_to_edge_length() {
                 && vertex.y.is_finite()
                 && vertex.bulge.is_finite())
     );
+}
+
+/// AMS 房间面板中的直线 PLOOP 会有共线回折。旧的无圆角分支一次性
+/// 删掉所有交点线段起点，删完仍相交就直接报错；通用的逐交点修复器能
+/// 按方向收口，且不把整个边界扩张成凸包。
+#[test]
+fn straight_backtracking_room_panel_loop_is_repaired() {
+    let vertices = vec![
+        Vec3::new(1583.57, -738.44, 0.0),
+        Vec3::new(1000.53, -738.43, 0.0),
+        Vec3::new(417.49, -738.43, 0.0),
+        Vec3::new(417.49, -1621.43, 0.0),
+        Vec3::new(417.49, -4458.4, 0.0),
+        Vec3::new(417.49, -3973.43, 0.0),
+        Vec3::new(417.5, -4994.38, 0.0),
+        Vec3::new(843.03, -5551.41, 0.0),
+        Vec3::new(1574.49, -6251.08, 0.0),
+        Vec3::new(7080.77, -8818.71, 0.0),
+        Vec3::new(7524.57, -8105.81, 0.0),
+        Vec3::new(8340.25, -6600.76, 0.0),
+        Vec3::new(8864.44, -5335.25, 0.0),
+        Vec3::new(9179.7, -4357.32, 0.0),
+    ];
+
+    let repaired = gen_polyline_original(&vertices).expect("straight loop must converge");
+    let intersections =
+        global_self_intersects(&repaired, &repaired.create_approx_aabb_index());
+    assert!(intersections.basic_intersects.is_empty());
+    assert!(intersections.overlapping_intersects.is_empty());
 }
