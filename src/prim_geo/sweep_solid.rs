@@ -743,12 +743,23 @@ impl BrepShapeTrait for SweepSolid {
         if let SweepPath3D::Line(_) = unit.path
             && !self.is_sloped()
         {
+            // `hash_unit_mesh_params` deliberately identifies every reusable,
+            // non-sloped linear sweep by its profile alone.  The persisted unit
+            // parameter must obey the same identity contract: instance-only
+            // orientation, end-face and path fields may not leak into the
+            // canonical `inst_geo` row for that hash.
+            unit.drns = None;
+            unit.drne = None;
+            unit.bangle = 0.0;
+            unit.plax = Vec3::Y;
             unit.extrude_dir = DVec3::Z;
+            unit.height = 0.0;
             unit.path = SweepPath3D::Line(Line3D {
                 start: Default::default(),
                 end: Vec3::Z * 10.0,
                 is_spine: false,
             });
+            unit.lmirror = false;
         }
         Box::new(unit)
     }
@@ -827,4 +838,82 @@ fn cal_end_face_rot(current_rot: DQuat, extru_dir: DVec3, face_dir: Option<DVec3
         );
     }
     mat
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::parsed_data::SRectData;
+
+    fn reusable_line() -> SweepSolid {
+        SweepSolid {
+            profile: CateProfileParam::UNKOWN,
+            path: SweepPath3D::Line(Line3D {
+                start: Vec3::new(1.0, 2.0, 3.0),
+                end: Vec3::new(4.0, 6.0, 9.0),
+                is_spine: true,
+            }),
+            ..Default::default()
+        }
+    }
+
+    fn unit(solid: &SweepSolid) -> SweepSolid {
+        *solid
+            .gen_unit_shape()
+            .downcast::<SweepSolid>()
+            .expect("SweepSolid unit shape keeps its concrete type")
+    }
+
+    #[test]
+    fn reusable_linear_aliases_share_hash_and_canonical_unit_shape() {
+        let left = reusable_line();
+        let mut right = left.clone();
+        right.drns = Some(DVec3::NEG_Z);
+        right.drne = Some(DVec3::Z);
+        right.bangle = 37.0;
+        right.plax = Vec3::X;
+        right.extrude_dir = DVec3::X;
+        right.height = 42.0;
+        right.lmirror = true;
+        right.path = SweepPath3D::Line(Line3D {
+            start: Vec3::splat(-8.0),
+            end: Vec3::new(7.0, 5.0, 11.0),
+            is_spine: false,
+        });
+
+        assert!(!left.is_sloped());
+        assert!(!right.is_sloped());
+        assert_eq!(left.hash_unit_mesh_params(), right.hash_unit_mesh_params());
+        assert_eq!(
+            bincode::serialize(&unit(&left)).unwrap(),
+            bincode::serialize(&unit(&right)).unwrap()
+        );
+
+        let canonical = unit(&left);
+        assert_eq!(canonical.drns, None);
+        assert_eq!(canonical.drne, None);
+        assert_eq!(canonical.bangle, 0.0);
+        assert_eq!(canonical.plax, Vec3::Y);
+        assert_eq!(canonical.extrude_dir, DVec3::Z);
+        assert_eq!(canonical.height, 0.0);
+        assert!(!canonical.lmirror);
+        let SweepPath3D::Line(line) = canonical.path else {
+            panic!("reusable linear unit shape must stay linear");
+        };
+        assert_eq!(line.start, Vec3::ZERO);
+        assert_eq!(line.end, Vec3::Z * 10.0);
+        assert!(!line.is_spine);
+    }
+
+    #[test]
+    fn reusable_linear_hash_still_distinguishes_profiles() {
+        let left = reusable_line();
+        let mut right = left.clone();
+        right.profile = CateProfileParam::SREC(SRectData {
+            size: Vec2::new(2.0, 3.0),
+            ..Default::default()
+        });
+
+        assert_ne!(left.hash_unit_mesh_params(), right.hash_unit_mesh_params());
+    }
 }
