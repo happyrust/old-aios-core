@@ -51,7 +51,128 @@ pub struct SweepSolid {
     pub lmirror: bool,
 }
 
+/// Core3D `setMitrePlanes` parallel check: `|DRN · tangent| < 1e-6`.
+pub const MITRE_PARALLEL_EPS: f64 = 1e-6;
+
+/// `do_solid_segments` 走哪条内核实体分支。
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum SolidSegmentKind {
+    Extrusion,
+    Revolution,
+    RuledSolid,
+}
+
 impl SweepSolid {
+    /// Core3D `DB_Gensec::setMitrePlanes`：由端面法向与该段切向推导工作斜切平面。
+    /// 不改元素上的 `DRNS`/`DRNE`。`None` 表示垂直或平行，斜切被抑制。
+    /// 起点方切外法向 = −tangent，终点 = +tangent。零长切向且有 DRN 时闭合失败（保留工作平面）。
+    pub fn set_mitre_planes(drn: Option<DVec3>, tangent: DVec3, is_start: bool) -> Option<DVec3> {
+        let drn = drn?;
+        let tan_len = tangent.length();
+        if tan_len <= MITRE_PARALLEL_EPS {
+            return Some(drn);
+        }
+        let tangent = tangent / tan_len;
+        let drn_len = drn.length();
+        if drn_len <= MITRE_PARALLEL_EPS {
+            return Some(drn);
+        }
+        let drn_unit = drn / drn_len;
+        let expected = if is_start { -tangent } else { tangent };
+        if (drn_unit - expected).length() <= MITRE_PARALLEL_EPS {
+            return None;
+        }
+        if drn_unit.dot(tangent).abs() <= MITRE_PARALLEL_EPS {
+            return None;
+        }
+        Some(drn)
+    }
+
+    /// Core3D `setImpliedBangs`：BANG 是绕规范挤出轴（+Z）的实例旋转，不烤进截面。
+    pub fn set_implied_bangs(bangle_deg: f32) -> Quat {
+        Quat::from_axis_angle(Vec3::Z, bangle_deg.to_radians())
+    }
+
+    /// Core3D `setSpineSegmentTransforms`：长度 / PLAX / 镜像 / 路径切向 → 实例变换（不含 BANG）。
+    pub fn set_spine_segment_transforms(
+        length: f32,
+        plax: Vec3,
+        lmirror: bool,
+        travel_tangent: DVec3,
+    ) -> bevy_transform::prelude::Transform {
+        let mut scale = Vec3::new(1.0, 1.0, length / 10.0);
+        if lmirror {
+            scale.x = -1.0;
+        }
+        let plax = if plax.length_squared() > 1e-12 {
+            plax.normalize()
+        } else {
+            Vec3::Y
+        };
+        let plax_rot = Quat::from_rotation_arc(Vec3::Y, plax);
+        let dir = travel_tangent.as_vec3();
+        let dir = if dir.length_squared() > 1e-12 {
+            dir.normalize()
+        } else {
+            Vec3::Z
+        };
+        let dir_rot = Quat::from_rotation_arc(Vec3::Z, dir);
+        bevy_transform::prelude::Transform {
+            rotation: dir_rot * plax_rot,
+            scale,
+            translation: Vec3::ZERO,
+        }
+    }
+
+    /// 目录截面即单位几何（hash 只键截面时的输入）。
+    pub fn set_cat_data(profile: CateProfileParam) -> Self {
+        Self {
+            profile,
+            ..Default::default()
+        }
+    }
+
+    /// Core3D `do_solid_segments`：无斜切直线 → 挤出；真斜切 → 放样；圆弧 → 回转。
+    pub fn do_solid_segments(&self) -> SolidSegmentKind {
+        match &self.path {
+            SweepPath3D::SpineArc(_) => SolidSegmentKind::Revolution,
+            SweepPath3D::Line(_) if self.is_sloped() => SolidSegmentKind::RuledSolid,
+            SweepPath3D::Line(_) => SolidSegmentKind::Extrusion,
+        }
+    }
+
+    pub fn travel_tangent(&self, is_start: bool) -> DVec3 {
+        match &self.path {
+            SweepPath3D::Line(line) => line.get_dir(true).as_dvec3(),
+            SweepPath3D::SpineArc(arc) => {
+                let radial = (arc.start_pt - arc.center).as_dvec3();
+                let axis = if arc.axis.length_squared() > 1e-12 {
+                    arc.axis.as_dvec3().normalize()
+                } else {
+                    DVec3::Z
+                };
+                let mut tangent = axis.cross(radial);
+                if arc.clock_wise {
+                    tangent = -tangent;
+                }
+                if !is_start {
+                    let ang = if arc.clock_wise {
+                        -(arc.angle as f64)
+                    } else {
+                        arc.angle as f64
+                    };
+                    tangent = DQuat::from_axis_angle(axis, ang) * tangent;
+                }
+                tangent
+            }
+        }
+    }
+
+    pub fn working_mitre_plane(&self, is_start: bool) -> Option<DVec3> {
+        let drn = if is_start { self.drns } else { self.drne };
+        Self::set_mitre_planes(drn, self.travel_tangent(is_start), is_start)
+    }
+
     #[inline]
     pub fn is_sloped(&self) -> bool {
         self.is_drns_sloped() || self.is_drne_sloped()
@@ -59,36 +180,19 @@ impl SweepSolid {
 
     #[inline]
     pub fn is_drns_sloped(&self) -> bool {
-        self.drns
-            .map(|v| abs_diff_ne!(v.z, -1.0, epsilon = 0.001))
-            .unwrap_or(false)
+        self.working_mitre_plane(true).is_some()
     }
 
     #[inline]
     pub fn is_drne_sloped(&self) -> bool {
-        self.drne
-            .map(|v| abs_diff_ne!(v.z, 1.0, epsilon = 0.001))
-            .unwrap_or(false)
+        self.working_mitre_plane(false).is_some()
     }
 
     //获得drns/drne的面的旋转矩阵
     pub fn get_face_mat4(&self, is_start: bool) -> DMat4 {
-        let is_sloped = if is_start {
-            self.is_drns_sloped()
-        } else {
-            self.is_drne_sloped()
-        };
-        if !is_sloped {
+        let Some(dir) = self.working_mitre_plane(is_start) else {
             return DMat4::IDENTITY;
-        }
-        let dir = if is_start {
-            self.drns.unwrap()
-        } else {
-            self.drne.unwrap()
         };
-        if dir.z.abs() < 0.1 {
-            return DMat4::IDENTITY;
-        }
         let mut angle_x = (dir.x / dir.z).atan();
         let mut angle_y = -(dir.y / dir.z).atan();
         //这里这个角度限制，应该用 h/2 / l 去计算，这里暂时给45°
@@ -777,25 +881,25 @@ impl BrepShapeTrait for SweepSolid {
 
     #[inline]
     fn get_trans(&self) -> bevy_transform::prelude::Transform {
-        match &self.profile {
-            CateProfileParam::SANN(_p) => {
-                return bevy_transform::prelude::Transform {
-                    rotation: Quat::IDENTITY,
-                    scale: self.get_scaled_vec3(),
-                    translation: Vec3::ZERO,
-                };
-            }
-            CateProfileParam::SPRO(_) | CateProfileParam::SREC(_) => {
-                return bevy_transform::prelude::Transform {
-                    rotation: Quat::IDENTITY,
-                    scale: self.get_scaled_vec3(),
-                    translation: Vec3::ZERO,
-                };
-            }
-            _ => {}
+        if !self.is_reuse_unit() {
+            return bevy_transform::prelude::Transform::IDENTITY;
         }
-
-        bevy_transform::prelude::Transform::IDENTITY
+        let length = match &self.path {
+            SweepPath3D::Line(line) => line.length(),
+            SweepPath3D::SpineArc(_) => 10.0,
+        };
+        let spine = Self::set_spine_segment_transforms(
+            length,
+            self.plax,
+            self.lmirror,
+            self.travel_tangent(true),
+        );
+        let bang = Self::set_implied_bangs(self.bangle);
+        bevy_transform::prelude::Transform {
+            rotation: spine.rotation * bang,
+            scale: spine.scale,
+            translation: Vec3::ZERO,
+        }
     }
 
     fn tol(&self) -> f32 {
@@ -845,12 +949,86 @@ mod tests {
     use super::*;
     use crate::parsed_data::SRectData;
 
+    const MITRE_EPS: f64 = 1e-6;
+
+    fn assert_no_mitre(drn: Option<DVec3>, tangent: DVec3, is_start: bool) {
+        let before = drn;
+        let plane = SweepSolid::set_mitre_planes(drn, tangent, is_start);
+        assert_eq!(
+            plane, None,
+            "tangent={tangent:?} drn={drn:?} start={is_start}"
+        );
+        assert_eq!(
+            drn, before,
+            "set_mitre_planes must not be thought of as mutating the input"
+        );
+    }
+
+    #[test]
+    fn drns_perp_no_mitre() {
+        assert_no_mitre(Some(DVec3::NEG_Z), DVec3::Z, true);
+        assert_no_mitre(None, DVec3::Z, true);
+    }
+
+    #[test]
+    fn drne_perp_no_mitre() {
+        assert_no_mitre(Some(DVec3::Z), DVec3::Z, false);
+        assert_no_mitre(None, DVec3::Z, false);
+    }
+
+    #[test]
+    fn drns_parallel_suppress_mitre() {
+        assert_no_mitre(Some(DVec3::X), DVec3::Z, true);
+        assert_no_mitre(Some(DVec3::NEG_Y), DVec3::Z, false);
+    }
+
+    #[test]
+    fn true_mitre_kept() {
+        let drn = DVec3::new(0.3, 0.0, -0.953939).normalize();
+        let plane = SweepSolid::set_mitre_planes(Some(drn), DVec3::Z, true);
+        assert!(
+            plane.is_some(),
+            "skewed DRNS against +Z must keep a working plane"
+        );
+        let plane = plane.unwrap();
+        assert!(
+            (plane.normalize() - drn).length() < MITRE_EPS,
+            "working plane keeps the attribute direction"
+        );
+    }
+
+    #[test]
+    fn perp_to_non_z_tangent() {
+        assert_no_mitre(Some(DVec3::NEG_X), DVec3::X, true);
+        assert_no_mitre(Some(DVec3::X), DVec3::X, false);
+    }
+
+    #[test]
+    fn set_mitre_planes_does_not_write_attributes() {
+        let mut solid = SweepSolid {
+            drns: Some(DVec3::X),
+            drne: Some(DVec3::Y),
+            path: SweepPath3D::Line(Line3D {
+                start: Vec3::ZERO,
+                end: Vec3::Z * 4.0,
+                is_spine: false,
+            }),
+            ..Default::default()
+        };
+        let _ = SweepSolid::set_mitre_planes(solid.drns, DVec3::Z, true);
+        let _ = SweepSolid::set_mitre_planes(solid.drne, DVec3::Z, false);
+        assert_eq!(solid.drns, Some(DVec3::X));
+        assert_eq!(solid.drne, Some(DVec3::Y));
+        solid.drns = Some(DVec3::NEG_Z);
+        assert_eq!(solid.drns, Some(DVec3::NEG_Z));
+    }
+
     fn reusable_line() -> SweepSolid {
         SweepSolid {
             profile: CateProfileParam::UNKOWN,
             path: SweepPath3D::Line(Line3D {
-                start: Vec3::new(1.0, 2.0, 3.0),
-                end: Vec3::new(4.0, 6.0, 9.0),
+                start: Vec3::ZERO,
+                end: Vec3::Z * 4.0,
                 is_spine: true,
             }),
             ..Default::default()
@@ -864,32 +1042,8 @@ mod tests {
             .expect("SweepSolid unit shape keeps its concrete type")
     }
 
-    #[test]
-    fn reusable_linear_aliases_share_hash_and_canonical_unit_shape() {
-        let left = reusable_line();
-        let mut right = left.clone();
-        right.drns = Some(DVec3::NEG_Z);
-        right.drne = Some(DVec3::Z);
-        right.bangle = 37.0;
-        right.plax = Vec3::X;
-        right.extrude_dir = DVec3::X;
-        right.height = 42.0;
-        right.lmirror = true;
-        right.path = SweepPath3D::Line(Line3D {
-            start: Vec3::splat(-8.0),
-            end: Vec3::new(7.0, 5.0, 11.0),
-            is_spine: false,
-        });
-
-        assert!(!left.is_sloped());
-        assert!(!right.is_sloped());
-        assert_eq!(left.hash_unit_mesh_params(), right.hash_unit_mesh_params());
-        assert_eq!(
-            bincode::serialize(&unit(&left)).unwrap(),
-            bincode::serialize(&unit(&right)).unwrap()
-        );
-
-        let canonical = unit(&left);
+    fn assert_canonical_envelope(solid: &SweepSolid) {
+        let canonical = unit(solid);
         assert_eq!(canonical.drns, None);
         assert_eq!(canonical.drne, None);
         assert_eq!(canonical.bangle, 0.0);
@@ -906,6 +1060,119 @@ mod tests {
     }
 
     #[test]
+    fn reusable_linear_aliases_share_hash_and_canonical_unit_shape() {
+        let left = reusable_line();
+        let mut right = left.clone();
+        right.drns = Some(DVec3::NEG_Z);
+        right.drne = Some(DVec3::Z);
+        right.bangle = 37.0;
+        right.plax = Vec3::X;
+        right.extrude_dir = DVec3::X;
+        right.height = 42.0;
+        right.lmirror = true;
+        right.path = SweepPath3D::Line(Line3D {
+            start: Vec3::ZERO,
+            end: Vec3::Z * 11.0,
+            is_spine: false,
+        });
+
+        assert!(!left.is_sloped());
+        assert!(!right.is_sloped());
+        assert_eq!(left.hash_unit_mesh_params(), right.hash_unit_mesh_params());
+        assert_eq!(
+            bincode::serialize(&unit(&left)).unwrap(),
+            bincode::serialize(&unit(&right)).unwrap()
+        );
+        assert_canonical_envelope(&left);
+        assert_canonical_envelope(&right);
+    }
+
+    #[test]
+    fn perp_to_non_z_tangent_shares_canonical_unit() {
+        let z_path = reusable_line();
+        let mut x_path = reusable_line();
+        x_path.path = SweepPath3D::Line(Line3D {
+            start: Vec3::ZERO,
+            end: Vec3::X * 7.0,
+            is_spine: false,
+        });
+        x_path.drns = Some(DVec3::NEG_X);
+        x_path.drne = Some(DVec3::X);
+
+        assert!(
+            !x_path.is_sloped(),
+            "square-cut against +X must not count as mitre"
+        );
+        assert_eq!(
+            z_path.hash_unit_mesh_params(),
+            x_path.hash_unit_mesh_params()
+        );
+        assert_eq!(
+            bincode::serialize(&unit(&z_path)).unwrap(),
+            bincode::serialize(&unit(&x_path)).unwrap()
+        );
+        assert_canonical_envelope(&x_path);
+        assert_eq!(x_path.do_solid_segments(), SolidSegmentKind::Extrusion);
+    }
+
+    #[test]
+    fn parallel_drn_still_reuses_profile_hash() {
+        let left = reusable_line();
+        let mut parallel = left.clone();
+        parallel.drns = Some(DVec3::X);
+        parallel.drne = Some(DVec3::NEG_Y);
+
+        assert!(!parallel.is_sloped());
+        assert_eq!(
+            left.hash_unit_mesh_params(),
+            parallel.hash_unit_mesh_params()
+        );
+        assert_canonical_envelope(&parallel);
+        assert_eq!(parallel.do_solid_segments(), SolidSegmentKind::Extrusion);
+    }
+
+    #[test]
+    fn true_mitre_is_not_canonicalized() {
+        let mut solid = reusable_line();
+        solid.drns = Some(DVec3::new(0.3, 0.0, -0.953939).normalize());
+
+        assert!(solid.is_sloped());
+        assert_eq!(solid.do_solid_segments(), SolidSegmentKind::RuledSolid);
+        assert_ne!(
+            solid.hash_unit_mesh_params(),
+            reusable_line().hash_unit_mesh_params()
+        );
+        let stored = unit(&solid);
+        assert_eq!(stored.drns, solid.drns);
+        let SweepPath3D::Line(line) = stored.path else {
+            panic!("true mitre stays linear");
+        };
+        assert_eq!(line.end, Vec3::Z * 4.0);
+    }
+
+    #[test]
+    fn spine_arc_is_not_canonicalized() {
+        let mut solid = reusable_line();
+        solid.path = SweepPath3D::SpineArc(Arc3D {
+            center: Vec3::ZERO,
+            radius: 10.0,
+            angle: FRAC_PI_2 as f32,
+            start_pt: Vec3::X * 10.0,
+            clock_wise: false,
+            axis: Vec3::Z,
+            pref_axis: Vec3::Y,
+        });
+
+        assert_eq!(solid.do_solid_segments(), SolidSegmentKind::Revolution);
+        assert_ne!(
+            solid.hash_unit_mesh_params(),
+            reusable_line().hash_unit_mesh_params()
+        );
+        let stored = unit(&solid);
+        assert!(matches!(stored.path, SweepPath3D::SpineArc(_)));
+    }
+
+    #[test]
     fn reusable_linear_hash_still_distinguishes_profiles() {
         let left = reusable_line();
         let mut right = left.clone();
@@ -915,5 +1182,77 @@ mod tests {
         });
 
         assert_ne!(left.hash_unit_mesh_params(), right.hash_unit_mesh_params());
+    }
+
+    #[test]
+    fn set_implied_bangs_rotates_instance_not_unit() {
+        let a = reusable_line();
+        let mut b = a.clone();
+        b.bangle = 37.0;
+
+        assert_eq!(a.hash_unit_mesh_params(), b.hash_unit_mesh_params());
+        assert_eq!(
+            bincode::serialize(&unit(&a)).unwrap(),
+            bincode::serialize(&unit(&b)).unwrap()
+        );
+        assert_eq!(a.get_trans().rotation, Quat::IDENTITY);
+        assert_eq!(b.get_trans().rotation, SweepSolid::set_implied_bangs(37.0));
+        assert_eq!(unit(&b).bangle, 0.0);
+    }
+
+    #[test]
+    fn set_spine_segment_transforms_scale_plax_and_mirror() {
+        let mut solid = reusable_line();
+        solid.path = SweepPath3D::Line(Line3D {
+            start: Vec3::ZERO,
+            end: Vec3::Z * 20.0,
+            is_spine: true,
+        });
+        assert!(
+            (solid.get_trans().scale.z - 2.0).abs() < 1e-5,
+            "length 20 against dummy 10 → scale.z = 2"
+        );
+
+        solid.lmirror = true;
+        assert!(solid.get_trans().scale.x < 0.0);
+        assert_eq!(
+            solid.hash_unit_mesh_params(),
+            reusable_line().hash_unit_mesh_params()
+        );
+
+        solid.lmirror = false;
+        solid.plax = Vec3::X;
+        let trans = solid.get_trans();
+        let expected_plax = SweepSolid::set_spine_segment_transforms(20.0, Vec3::X, false, DVec3::Z);
+        assert_eq!(trans.rotation, expected_plax.rotation);
+        assert_eq!(unit(&solid).plax, Vec3::Y);
+        assert_eq!(unit(&solid).extrude_dir, DVec3::Z);
+    }
+
+    #[test]
+    fn world_path_direction_lives_in_instance_rotation() {
+        let mut solid = reusable_line();
+        solid.path = SweepPath3D::Line(Line3D {
+            start: Vec3::ZERO,
+            end: Vec3::X * 10.0,
+            is_spine: false,
+        });
+        solid.drns = Some(DVec3::NEG_X);
+        solid.drne = Some(DVec3::X);
+
+        assert!(!solid.is_sloped());
+        let trans = solid.get_trans();
+        let rotated_z = trans.rotation * Vec3::Z;
+        assert!(
+            (rotated_z - Vec3::X).length() < 1e-5,
+            "instance rotation must send canonical +Z along the path, got {rotated_z:?}"
+        );
+        assert_eq!(unit(&solid).extrude_dir, DVec3::Z);
+        let SweepPath3D::Line(line) = unit(&solid).path else {
+            panic!("canonical envelope stays linear");
+        };
+        assert_eq!(line.start, Vec3::ZERO);
+        assert_eq!(line.end, Vec3::Z * 10.0);
+        assert!(!line.is_spine);
     }
 }
