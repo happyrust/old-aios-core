@@ -30,9 +30,9 @@ use sea_orm::entity::prelude::*;
 use sea_query::*;
 #[cfg(feature = "sea-orm")]
 use sea_query::*;
-use serde::{de, Deserialize, Deserializer, Serialize, Serializer};
+use serde::{Deserialize, Deserializer, Serialize, Serializer, de};
 use serde_repr::{Deserialize_repr, Serialize_repr};
-use serde_with::{serde_as, DisplayFromStr};
+use serde_with::{DisplayFromStr, serde_as};
 use std::collections::{BTreeMap, HashMap, HashSet};
 use std::fmt::{Debug, Display, Pointer};
 use std::io::{Read, Write};
@@ -73,43 +73,16 @@ pub const USE_CATE_NOUN_NAMES: [&'static str; 35] = [
 ];
 
 ///使用元件库的几何体相关的属性, todo 继续完善
-pub const CATA_GEO_ATTR_NAMES: [&'static str; 4] = [
-    "SPRE", "CATR", "ZDIS", "DESP"
-];
+pub const CATA_GEO_ATTR_NAMES: [&'static str; 4] = ["SPRE", "CATR", "ZDIS", "DESP"];
 
 ///方位的相关属性, todo 继续完善
-pub const TRANSFORM_ATTR_NAMES: [&'static str; 4] = [
-    "POS", "ORI", "POSS", "POSE"
-];
+pub const TRANSFORM_ATTR_NAMES: [&'static str; 4] = ["POS", "ORI", "POSS", "POSE"];
 
 ///管道的类型
 pub const PIPING_NOUN_NAMES: [&'static str; 26] = [
-    "WELD",
-    "ELBO",
-    "VALV", 
-    "FLAN",
-    "GASK",
-    "ATTA",
-    "OLET",
-    "FBLI",
-    "REDU",
-    "TEE",
-    "BEND",
-    "INST",
-    "TRNS",
-    "DAMP",
-    "STRT",
-    "TAPE",
-    "THRE",
-    "UNIO",
-    "BRCO",
-    "OFST",
-    "CAP",
-    "PCOM",
-    "FTUB",
-    "STIF",
-    "SILE",
-    "COUP"
+    "WELD", "ELBO", "VALV", "FLAN", "GASK", "ATTA", "OLET", "FBLI", "REDU", "TEE", "BEND", "INST",
+    "TRNS", "DAMP", "STRT", "TAPE", "THRE", "UNIO", "BRCO", "OFST", "CAP", "PCOM", "FTUB", "STIF",
+    "SILE", "COUP",
 ];
 
 ///负实体基本体的种类
@@ -130,13 +103,9 @@ pub const TOTAL_NEG_NOUN_NAMES: [&'static str; 26] = [
     "NSEX", "NSRE",
 ];
 
-pub const TOTAL_VERT_NOUN_NAMES: [&'static str; 2] = [
-    "VERT", "PAVE"
-];
+pub const TOTAL_VERT_NOUN_NAMES: [&'static str; 2] = ["VERT", "PAVE"];
 
-pub const TOTAL_LOOP_NOUN_NAMES: [&'static str; 2] = [
-    "LOOP", "PLOO"
-];
+pub const TOTAL_LOOP_NOUN_NAMES: [&'static str; 2] = ["LOOP", "PLOO"];
 
 pub const JOINT_TYPES: [&'static str; 2] = ["SJOI", "PJOI"];
 
@@ -192,7 +161,6 @@ pub const VISBILE_GEO_NOUNS: [&'static str; 39] = [
     "CMFI", "SCOJ", "SEVE", "SBFI", "STWALL", "SCTN", "NOZZ",
 ];
 
-
 #[derive(Serialize, Deserialize, Clone, Debug, Default, Copy, Eq, PartialEq, Hash)]
 pub enum SjusType {
     #[default]
@@ -214,7 +182,7 @@ pub mod string {
     use std::fmt::Display;
     use std::str::FromStr;
 
-    use serde::{de, Deserialize, Deserializer, Serializer};
+    use serde::{Deserialize, Deserializer, Serializer, de};
 
     pub fn serialize<T, S>(value: &T, serializer: S) -> Result<S::Ok, S::Error>
     where
@@ -370,7 +338,7 @@ pub trait PdmsNodeTrait: Default {
         0
     }
 
-    #[inline]   
+    #[inline]
     fn get_status(&self) -> &str {
         ""
     }
@@ -738,6 +706,14 @@ pub struct AttrInfo {
     pub offset: u32,
     pub default_val: AttrVal,
     pub att_type: DbAttributeType,
+    /// core.dll `DB_Attribute::ityp`（`0x58d2630`）——与 `att_type` 不同的一维分类，
+    /// 51/52 表示「值本身是一个属性键 / noun 键」，core 在读路径上对这两类走
+    /// `DB_Uda::oldToNew` 做旧键归一化（ADR-032 边界 B）。
+    ///
+    /// `None` = **尚未采集**，不是「取值为 0」：现有 `all_attr_info.json` 里一个都没有，
+    /// 采下来之前任何按 51/52 分派的逻辑都必须把 `None` 当作「不知道」而非「不是」。
+    #[serde(default)]
+    pub ityp: Option<i32>,
 }
 
 impl AttrInfo {

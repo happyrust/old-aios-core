@@ -1,16 +1,18 @@
-use anyhow::anyhow;
-use std::collections::hash_map::DefaultHasher;
-use std::hash::{Hash, Hasher};
+#[cfg(all(feature = "gen_model", feature = "manifold"))]
+use crate::csg::manifold::*;
 use crate::parsed_data::geo_params_data::PdmsGeoParam;
+use anyhow::anyhow;
 use glam::{DVec3, Vec2, Vec3};
 use serde::{Deserialize, Serialize};
+use std::collections::hash_map::DefaultHasher;
+use std::hash::{Hash, Hasher};
 #[cfg(feature = "truck")]
 use truck_meshalgo::prelude::*;
 #[cfg(feature = "truck")]
-use truck_modeling::{builder, Shell, Surface, Wire};
-#[cfg(feature = "gen_model")]
-use crate::csg::manifold::*;
+use truck_modeling::{Shell, Surface, Wire, builder};
 
+#[cfg(feature = "occ")]
+use crate::prim_geo::basic::OccSharedShape;
 use crate::prim_geo::wire::*;
 use crate::shape::pdms_shape::*;
 use crate::tool::float_tool::{f32_round_3, hash_f32, hash_vec3};
@@ -19,8 +21,6 @@ use bevy_ecs::prelude::*;
 use opencascade::primitives::*;
 #[cfg(feature = "occ")]
 use opencascade::workplane::Workplane;
-#[cfg(feature = "occ")]
-use crate::prim_geo::basic::OccSharedShape;
 
 #[derive(
     Component,
@@ -105,7 +105,9 @@ impl BrepShapeTrait for Extrusion {
         let face = if let CurveType::Spline(thick) = self.cur_type {
             gen_occ_spline_wire(&self.verts, thick).map(|x| x.to_face())
         } else {
-            gen_occ_wires(&self.verts).map(|x| Face::from_wires(&x)).flatten()
+            gen_occ_wires(&self.verts)
+                .map(|x| Face::from_wires(&x))
+                .flatten()
         };
         match face {
             Err(e) => {
@@ -117,9 +119,10 @@ impl BrepShapeTrait for Extrusion {
                 return Err(anyhow!("Extrusion gen_occ_shape error:{}", e));
             }
             Ok(f) => {
-                let shape = OccSharedShape::new(f
-                    .extrude(DVec3::new(0., 0.0, self.height as _))
-                    .into_shape());
+                let shape = OccSharedShape::new(
+                    f.extrude(DVec3::new(0., 0.0, self.height as _))
+                        .into_shape(),
+                );
                 Ok(shape)
             }
         }
@@ -169,7 +172,6 @@ impl BrepShapeTrait for Extrusion {
     ///使用manifold生成拉身体的mesh
     #[cfg(feature = "truck")]
     fn gen_csg_mesh(&self) -> Option<PlantMesh> {
-
         if !self.check_valid() {
             return None;
         }

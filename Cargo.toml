@@ -24,7 +24,7 @@ truck = [
     # "dep:truck-meshalgo",
     # "dep:truck-stepio",
 ]
-gen_model = ["manifold"]
+gen_model = []
 debug_expr = []
 debug_wire = []
 debug_spatial = []

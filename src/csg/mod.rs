@@ -1,2 +1,2 @@
-#[cfg(feature = "gen_model")]
+#[cfg(feature = "manifold")]
 pub mod manifold;

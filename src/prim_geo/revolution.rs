@@ -1,4 +1,4 @@
-#[cfg(feature = "gen_model")]
+#[cfg(all(feature = "gen_model", feature = "manifold"))]
 use crate::csg::manifold::*;
 use crate::parsed_data::geo_params_data::PdmsGeoParam;
 #[cfg(feature = "occ")]
@@ -6,10 +6,10 @@ use crate::prim_geo::basic::OccSharedShape;
 use crate::prim_geo::wire::*;
 #[cfg(feature = "truck")]
 use crate::shape::pdms_shape::BrepMathTrait;
-use crate::shape::pdms_shape::{BrepShapeTrait, PlantMesh, RsVec3, VerifiedShape, TRI_TOL};
+use crate::shape::pdms_shape::{BrepShapeTrait, PlantMesh, RsVec3, TRI_TOL, VerifiedShape};
 use crate::tool::float_tool::{f32_round_3, hash_f32, hash_vec3};
-use approx::abs_diff_eq;
 use approx::AbsDiffEq;
+use approx::abs_diff_eq;
 use glam::{Vec2, Vec3};
 #[cfg(feature = "occ")]
 use opencascade::angle::ToAngle;
@@ -21,7 +21,7 @@ use std::hash::{Hash, Hasher};
 #[cfg(feature = "truck")]
 use truck_meshalgo::prelude::*;
 #[cfg(feature = "truck")]
-use truck_modeling::{builder, Surface};
+use truck_modeling::{Surface, builder};
 #[cfg(feature = "truck")]
 use truck_stepio::out;
 
@@ -125,7 +125,10 @@ impl BrepShapeTrait for Revolution {
     #[cfg(feature = "occ")]
     fn gen_occ_shape(&self) -> anyhow::Result<OccSharedShape> {
         let wires = gen_occ_wires(&self.verts)?;
-        let angle = if abs_diff_eq!(self.angle, 360.0, epsilon = 0.01) || self.angle > 360.0 || self.angle == 0.0 {
+        let angle = if abs_diff_eq!(self.angle, 360.0, epsilon = 0.01)
+            || self.angle > 360.0
+            || self.angle == 0.0
+        {
             360.0
         } else {
             self.angle as f64
@@ -176,7 +179,7 @@ impl BrepShapeTrait for Revolution {
         #[cfg(feature = "truck")]
         use truck_meshalgo::prelude::*;
         #[cfg(feature = "truck")]
-        use truck_modeling::{builder, Shell, Surface, Wire};
+        use truck_modeling::{Shell, Surface, Wire, builder};
         if !self.check_valid() {
             return None;
         }
