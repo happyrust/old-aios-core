@@ -1,46 +1,56 @@
+use crate::parsed_data::geo_params_data::PdmsGeoParam;
+use crate::prim_geo::facet_caliber::{FacetCaliber, cylinder_caliber};
+use bevy_ecs::prelude::*;
+use bevy_transform::prelude::Transform;
+use glam::{DMat4, DVec3, Mat4, Vec3};
+use nom::Parser;
+use serde::{Deserialize, Serialize};
 use std::collections::hash_map::DefaultHasher;
 use std::f64::consts::FRAC_PI_2;
 use std::hash::Hash;
 use std::hash::Hasher;
 use std::sync::Arc;
-use glam::{DMat4, DVec3, Mat4, Vec3};
-use bevy_ecs::prelude::*;
-use bevy_transform::prelude::Transform;
-use nom::Parser;
-use serde::{Deserialize, Serialize};
-use crate::parsed_data::geo_params_data::PdmsGeoParam;
 
-use crate::types::attmap::AttrMap;
 use crate::prim_geo::basic::*;
 use crate::prim_geo::helper::cal_ref_axis;
 #[cfg(feature = "truck")]
 use crate::shape::pdms_shape::BrepMathTrait;
 use crate::shape::pdms_shape::{BrepShapeTrait, PlantMesh, RsVec3, TRI_TOL, VerifiedShape};
+use crate::types::attmap::AttrMap;
 
+use crate::NamedAttrMap;
 #[cfg(feature = "occ")]
 use opencascade::primitives::*;
-use crate::NamedAttrMap;
 #[cfg(feature = "occ")]
 use opencascade::workplane::Workplane;
 #[cfg(feature = "truck")]
 use truck_modeling::*;
 
-
 ///元件库里的LCylinder
-#[derive(Component, Debug, Clone, Serialize, Deserialize, rkyv::Archive, rkyv::Deserialize, rkyv::Serialize, )]
+#[derive(
+    Component,
+    Debug,
+    Clone,
+    Serialize,
+    Deserialize,
+    rkyv::Archive,
+    rkyv::Deserialize,
+    rkyv::Serialize,
+)]
 pub struct LCylinder {
     pub paxi_expr: String,
     pub paxi_pt: Vec3,
     //A Axis point
-    pub paxi_dir: Vec3,   //A Axis Direction
+    pub paxi_dir: Vec3, //A Axis Direction
 
     pub pbdi: f32,
     pub ptdi: f32,
     //diameter
     pub pdia: f32,
     pub negative: bool,
+    #[serde(default)]
+    pub mesh_caliber: FacetCaliber,
 }
-
 
 impl Default for LCylinder {
     fn default() -> Self {
@@ -52,6 +62,17 @@ impl Default for LCylinder {
             ptdi: 0.5,
             pdia: 1.0,
             negative: false,
+            mesh_caliber: FacetCaliber::default(),
+        }
+    }
+}
+
+impl LCylinder {
+    pub fn facet_caliber(&self) -> FacetCaliber {
+        if self.mesh_caliber.is_explicit() {
+            self.mesh_caliber
+        } else {
+            cylinder_caliber((self.pdia * 0.5) as f64)
         }
     }
 }
@@ -134,11 +155,7 @@ pub fn gen_unit_cylinder() -> PlantMesh {
         }
 
         for i in 1..(resolution - 1) {
-            indices.extend_from_slice(&[
-                offset,
-                offset + i + winding.1,
-                offset + i + winding.0,
-            ]);
+            indices.extend_from_slice(&[offset, offset + i + winding.1, offset + i + winding.0]);
         }
     };
 
@@ -163,7 +180,9 @@ impl BrepShapeTrait for LCylinder {
 
     #[cfg(feature = "truck")]
     fn gen_brep_shell(&self) -> Option<truck_modeling::Shell> {
-        if !self.check_valid() { return None; }
+        if !self.check_valid() {
+            return None;
+        }
 
         let dir = self.paxi_dir.normalize();
         let r = self.pdia / 2.0;
@@ -185,25 +204,31 @@ impl BrepShapeTrait for LCylinder {
     }
 
     fn convert_to_geo_param(&self) -> Option<PdmsGeoParam> {
-        Some(
-            PdmsGeoParam::PrimLCylinder(self.clone())
-        )
+        Some(PdmsGeoParam::PrimLCylinder(self.clone()))
     }
 
     fn hash_unit_mesh_params(&self) -> u64 {
-        CYLINDER_GEO_HASH
+        let mut hasher = DefaultHasher::new();
+        "cylinder".hash(&mut hasher);
+        self.facet_caliber().hash(&mut hasher);
+        hasher.finish()
     }
 
     /// 如果是常规的基本体生成，直接跳过, 复用已经生成好的
     #[cfg(feature = "occ")]
     fn gen_occ_shape(&self) -> anyhow::Result<OccSharedShape> {
-        if !self.check_valid() { return Err(anyhow::anyhow!("Not valid LCylinder")); }
+        if !self.check_valid() {
+            return Err(anyhow::anyhow!("Not valid LCylinder"));
+        }
 
         Ok(CYLINDER_SHAPE.clone())
     }
 
     fn gen_unit_shape(&self) -> Box<dyn BrepShapeTrait> {
-        Box::new(Self::default())
+        Box::new(Self {
+            mesh_caliber: self.facet_caliber(),
+            ..Self::default()
+        })
     }
 
     #[inline]
@@ -221,10 +246,16 @@ impl BrepShapeTrait for LCylinder {
     }
 }
 
-
-
-
-#[derive(Component, Debug, Clone, Serialize, Deserialize, rkyv::Archive, rkyv::Deserialize, rkyv::Serialize, )]
+#[derive(
+    Component,
+    Debug,
+    Clone,
+    Serialize,
+    Deserialize,
+    rkyv::Archive,
+    rkyv::Deserialize,
+    rkyv::Serialize,
+)]
 pub struct SCylinder {
     pub paxi_expr: String,
     pub paxi_pt: Vec3,
@@ -240,6 +271,8 @@ pub struct SCylinder {
     // y shear
     pub negative: bool,
     pub center_in_mid: bool,
+    #[serde(default)]
+    pub mesh_caliber: FacetCaliber,
 }
 
 impl Default for SCylinder {
@@ -254,17 +287,26 @@ impl Default for SCylinder {
             top_shear_angles: [0.0f32; 2],
             negative: false,
             center_in_mid: false,
+            mesh_caliber: FacetCaliber::default(),
         }
     }
 }
 
 impl SCylinder {
+    pub fn facet_caliber(&self) -> FacetCaliber {
+        if self.mesh_caliber.is_explicit() {
+            self.mesh_caliber
+        } else {
+            cylinder_caliber((self.pdia * 0.5) as f64)
+        }
+    }
+
     #[inline]
     pub fn is_sscl(&self) -> bool {
-        self.btm_shear_angles[0].abs() > f32::EPSILON ||
-            self.btm_shear_angles[1].abs() > f32::EPSILON ||
-            self.top_shear_angles[0].abs() > f32::EPSILON ||
-            self.top_shear_angles[1].abs() > f32::EPSILON
+        self.btm_shear_angles[0].abs() > f32::EPSILON
+            || self.btm_shear_angles[1].abs() > f32::EPSILON
+            || self.top_shear_angles[0].abs() > f32::EPSILON
+            || self.top_shear_angles[1].abs() > f32::EPSILON
     }
 }
 
@@ -318,8 +360,7 @@ impl BrepShapeTrait for SCylinder {
 
         let mut w_s = builder::transformed(&origin_w, transform_btm);
         let mut w_e = builder::transformed(&origin_w, transform_top);
-        if let Ok(mut f) = builder::try_attach_plane(&[w_s.clone()])
-        {
+        if let Ok(mut f) = builder::try_attach_plane(&[w_s.clone()]) {
             let mut f_e = builder::try_attach_plane(&[w_e.clone()]).unwrap().inverse();
             // dbg!(reverse_dir);
             if !reverse_dir {
@@ -367,7 +408,10 @@ impl BrepShapeTrait for SCylinder {
             // dbg!(&self.btm_shear_angles);
             let transform_btm =
                 DMat4::from_axis_angle(DVec3::Y, -(self.btm_shear_angles[0].to_radians() as f64))
-                    * DMat4::from_axis_angle(DVec3::X, (self.btm_shear_angles[1].to_radians() as f64))
+                    * DMat4::from_axis_angle(
+                        DVec3::X,
+                        (self.btm_shear_angles[1].to_radians() as f64),
+                    )
                     * scale_mat;
 
             // dbg!(&self.top_shear_angles);
@@ -381,7 +425,9 @@ impl BrepShapeTrait for SCylinder {
             let btm_circe = circle.transformed_by_gmat(&transform_btm)?;
             let top_circle = circle.transformed_by_gmat(&transform_top)?;
 
-            Ok(OccSharedShape::new(Solid::loft([btm_circe, top_circle].iter()).into()))
+            Ok(OccSharedShape::new(
+                Solid::loft([btm_circe, top_circle].iter()).into(),
+            ))
         } else {
             Ok(CYLINDER_SHAPE.clone())
         }
@@ -395,7 +441,10 @@ impl BrepShapeTrait for SCylinder {
             "SSCL".hash(&mut hasher);
             hasher.finish()
         } else {
-            CYLINDER_GEO_HASH
+            let mut hasher = DefaultHasher::new();
+            "cylinder".hash(&mut hasher);
+            self.facet_caliber().hash(&mut hasher);
+            hasher.finish()
         }
     }
 
@@ -403,7 +452,10 @@ impl BrepShapeTrait for SCylinder {
         if self.is_sscl() {
             return Box::new(self.clone());
         }
-        Box::new(Self::default())
+        Box::new(Self {
+            mesh_caliber: self.facet_caliber(),
+            ..Self::default()
+        })
     }
 
     #[inline]
@@ -438,11 +490,8 @@ impl BrepShapeTrait for SCylinder {
     }
 
     fn convert_to_geo_param(&self) -> Option<PdmsGeoParam> {
-        Some(
-            PdmsGeoParam::PrimSCylinder(self.clone())
-        )
+        Some(PdmsGeoParam::PrimSCylinder(self.clone()))
     }
-
 
     ///直接通过基本体的参数，生成模型
     fn gen_csg_mesh(&self) -> Option<PlantMesh> {
@@ -477,7 +526,6 @@ impl From<AttrMap> for SCylinder {
         (&m).into()
     }
 }
-
 
 impl From<&NamedAttrMap> for SCylinder {
     fn from(m: &NamedAttrMap) -> Self {

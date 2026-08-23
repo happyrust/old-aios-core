@@ -3,21 +3,22 @@ use hexasphere::shapes::IcoSphere;
 use std::f64::consts::PI;
 use std::sync::Arc;
 #[cfg(feature = "truck")]
+use truck_base::cgmath64::{Point3, Rad, Vector3};
+#[cfg(feature = "truck")]
 use truck_modeling::Shell;
 #[cfg(feature = "truck")]
 use truck_modeling::*;
-#[cfg(feature = "truck")]
-use truck_base::cgmath64::{Point3, Rad, Vector3};
 
 use crate::parsed_data::geo_params_data::PdmsGeoParam;
 use crate::prim_geo::basic::*;
+use crate::prim_geo::facet_caliber::{FacetCaliber, sphere_caliber};
 use crate::shape::pdms_shape::{BrepShapeTrait, PlantMesh, RsVec3, VerifiedShape};
 #[cfg(feature = "occ")]
 use opencascade::primitives::*;
 use serde::{Deserialize, Serialize};
 
-use crate::types::attmap::AttrMap;
 use crate::NamedAttrMap;
+use crate::types::attmap::AttrMap;
 use bevy_ecs::prelude::*;
 
 #[derive(
@@ -34,6 +35,8 @@ use bevy_ecs::prelude::*;
 pub struct Sphere {
     pub center: Vec3,
     pub radius: f32,
+    #[serde(default)]
+    pub mesh_caliber: FacetCaliber,
 }
 
 impl Default for Sphere {
@@ -41,6 +44,17 @@ impl Default for Sphere {
         Sphere {
             center: Default::default(),
             radius: 1.0,
+            mesh_caliber: FacetCaliber::default(),
+        }
+    }
+}
+
+impl Sphere {
+    pub fn facet_caliber(&self) -> FacetCaliber {
+        if self.mesh_caliber.is_explicit() {
+            self.mesh_caliber
+        } else {
+            sphere_caliber(self.radius as f64)
         }
     }
 }
@@ -74,15 +88,24 @@ impl BrepShapeTrait for Sphere {
     //OCC 的生成
     #[cfg(feature = "occ")]
     fn gen_occ_shape(&self) -> anyhow::Result<OccSharedShape> {
-        Ok(OccSharedShape::new(Shape::sphere(self.radius as f64).build()))
+        Ok(OccSharedShape::new(
+            Shape::sphere(self.radius as f64).build(),
+        ))
     }
 
     fn hash_unit_mesh_params(&self) -> u64 {
-        SPHERE_GEO_HASH //代表SPHERE
+        let mut hasher = std::collections::hash_map::DefaultHasher::new();
+        use std::hash::{Hash, Hasher};
+        "sphere".hash(&mut hasher);
+        self.facet_caliber().hash(&mut hasher);
+        hasher.finish()
     }
 
     fn gen_unit_shape(&self) -> Box<dyn BrepShapeTrait> {
-        Box::new(Sphere::default())
+        Box::new(Sphere {
+            mesh_caliber: self.facet_caliber(),
+            ..Sphere::default()
+        })
     }
 
     #[inline]
@@ -144,6 +167,7 @@ impl From<&AttrMap> for Sphere {
         Self {
             center: Default::default(),
             radius: m.get_f32("RADI").unwrap_or_default(),
+            mesh_caliber: FacetCaliber::default(),
         }
     }
 }
@@ -153,6 +177,7 @@ impl From<&NamedAttrMap> for Sphere {
         Self {
             center: Default::default(),
             radius: m.get_f32("RADI").unwrap_or_default(),
+            mesh_caliber: FacetCaliber::default(),
         }
     }
 }

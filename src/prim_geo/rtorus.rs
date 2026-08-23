@@ -1,47 +1,55 @@
-use std::collections::hash_map::DefaultHasher;
-use std::hash::Hasher;
-use std::hash::Hash;
-use std::sync::Arc;
-use glam::{DVec3, Mat3, Quat, Vec3};
-use bevy_ecs::prelude::*;
-#[cfg(feature = "truck")]
-use truck_modeling::{Shell};
-#[cfg(feature = "truck")]
-use truck_modeling::builder::*;
-#[cfg(feature = "truck")]
-use truck_modeling::builder::*;
-use crate::types::attmap::AttrMap;
-use serde::{Serialize, Deserialize};
+use crate::NamedAttrMap;
 use crate::parsed_data::geo_params_data::PdmsGeoParam;
-use bevy_transform::prelude::Transform;
+#[cfg(feature = "occ")]
+use crate::prim_geo::basic::OccSharedShape;
+use crate::prim_geo::facet_caliber::{FacetCaliber, rectangular_torus_caliber};
 use crate::prim_geo::helper::*;
 use crate::shape::pdms_shape::*;
 use crate::tool::float_tool::hash_f32;
-use crate::NamedAttrMap;
-#[cfg(feature = "occ")]
-use opencascade::primitives::*;
+use crate::types::attmap::AttrMap;
+use bevy_ecs::prelude::*;
+use bevy_transform::prelude::Transform;
+use glam::{DVec3, Mat3, Quat, Vec3};
 #[cfg(feature = "occ")]
 use opencascade::angle::ToAngle;
 #[cfg(feature = "occ")]
-use crate::prim_geo::basic::OccSharedShape;
+use opencascade::primitives::*;
+use serde::{Deserialize, Serialize};
+use std::collections::hash_map::DefaultHasher;
+use std::hash::Hash;
+use std::hash::Hasher;
+use std::sync::Arc;
+#[cfg(feature = "truck")]
+use truck_modeling::Shell;
+#[cfg(feature = "truck")]
+use truck_modeling::builder::*;
+#[cfg(feature = "truck")]
+use truck_modeling::builder::*;
 
-#[derive(Component, Debug, Clone, Serialize, Deserialize, rkyv::Archive, rkyv::Deserialize, rkyv::Serialize, )]
+#[derive(
+    Component,
+    Debug,
+    Clone,
+    Serialize,
+    Deserialize,
+    rkyv::Archive,
+    rkyv::Deserialize,
+    rkyv::Serialize,
+)]
 pub struct SRTorus {
     pub paax_expr: String,
     pub paax_pt: Vec3,
     //A Axis point
-    pub paax_dir: Vec3,   //A Axis Direction
+    pub paax_dir: Vec3, //A Axis Direction
 
     pub pbax_expr: String,
     pub pbax_pt: Vec3,
     //B Axis point
-    pub pbax_dir: Vec3,   //B Axis Direction
+    pub pbax_dir: Vec3, //B Axis Direction
 
     pub pheig: f32,
     pub pdia: f32,
-
 }
-
 
 impl Default for SRTorus {
     fn default() -> Self {
@@ -69,8 +77,13 @@ struct TorusInfo {
 
 impl SRTorus {
     pub fn convert_to_rtorus(&self) -> Option<(RTorus, Transform)> {
-        if let Some(torus_info) = RotateInfo::cal_rotate_info(self.paax_dir,
-                                                              self.paax_pt, self.pbax_dir, self.pbax_pt, self.pdia / 2.0) {
+        if let Some(torus_info) = RotateInfo::cal_rotate_info(
+            self.paax_dir,
+            self.paax_pt,
+            self.pbax_dir,
+            self.pbax_pt,
+            self.pdia / 2.0,
+        ) {
             // dbg!(&torus_info);
             let mut rtorus = RTorus::default();
             rtorus.angle = torus_info.angle;
@@ -82,9 +95,7 @@ impl SRTorus {
             let y_axis = z_axis.cross(x_axis).normalize();
             let translation = torus_info.center;
             let mat = Transform {
-                rotation: Quat::from_mat3(&Mat3::from_cols(
-                    x_axis, y_axis, z_axis,
-                )),
+                rotation: Quat::from_mat3(&Mat3::from_cols(x_axis, y_axis, z_axis)),
                 translation,
                 ..Default::default()
             };
@@ -109,8 +120,13 @@ impl BrepShapeTrait for SRTorus {
 
     #[cfg(feature = "truck")]
     fn gen_brep_shell(&self) -> Option<Shell> {
-        if let Some(torus_info) = RotateInfo::cal_rotate_info(self.paax_dir, self.paax_pt,
-                                                              self.pbax_dir, self.pbax_pt, self.pdia / 2.0) {
+        if let Some(torus_info) = RotateInfo::cal_rotate_info(
+            self.paax_dir,
+            self.paax_pt,
+            self.pbax_dir,
+            self.pbax_pt,
+            self.pdia / 2.0,
+        ) {
             let _circle_origin = self.paax_pt.point3();
             let z_axis = self.paax_dir.normalize().vector3();
             let y_axis = torus_info.rot_axis.vector3();
@@ -122,8 +138,13 @@ impl BrepShapeTrait for SRTorus {
             let e = builder::tsweep(&v, y_axis * h as f64);
             let f = builder::tsweep(&e, x_axis * d as f64);
             let center = torus_info.center.point3();
-            let mut solid = builder::rsweep(&f, center, -y_axis,
-                                            Rad(torus_info.angle.to_radians() as f64)).into_boundaries();
+            let mut solid = builder::rsweep(
+                &f,
+                center,
+                -y_axis,
+                Rad(torus_info.angle.to_radians() as f64),
+            )
+            .into_boundaries();
             return solid.pop();
         }
         None
@@ -131,8 +152,13 @@ impl BrepShapeTrait for SRTorus {
 
     #[cfg(feature = "occ")]
     fn gen_occ_shape(&self) -> anyhow::Result<OccSharedShape> {
-        if let Some(torus_info) = RotateInfo::cal_rotate_info(self.paax_dir, self.paax_pt,
-                                                              self.pbax_dir, self.pbax_pt, self.pdia / 2.0) {
+        if let Some(torus_info) = RotateInfo::cal_rotate_info(
+            self.paax_dir,
+            self.paax_pt,
+            self.pbax_dir,
+            self.pbax_pt,
+            self.pdia / 2.0,
+        ) {
             let z_axis = self.pbax_dir.normalize().as_dvec3();
             let y_axis = torus_info.rot_axis.as_dvec3();
             let x_axis = y_axis.cross(z_axis);
@@ -152,7 +178,9 @@ impl BrepShapeTrait for SRTorus {
             let wire = Wire::from_edges([&top, &right, &bottom, &left].into_iter())?;
             let center = torus_info.center;
             let angle = -torus_info.angle;
-            let r = wire.to_face().revolve(center.as_dvec3(), y_axis, Some(angle.degrees()));
+            let r = wire
+                .to_face()
+                .revolve(center.as_dvec3(), y_axis, Some(angle.degrees()));
             return Ok(OccSharedShape::new(r.into_shape()));
         }
 
@@ -175,14 +203,25 @@ impl From<AttrMap> for SRTorus {
     }
 }
 
-#[derive(Component, Debug, Clone, Serialize, Deserialize, rkyv::Archive, rkyv::Deserialize, rkyv::Serialize, )]
+#[derive(
+    Component,
+    Debug,
+    Clone,
+    Serialize,
+    Deserialize,
+    rkyv::Archive,
+    rkyv::Deserialize,
+    rkyv::Serialize,
+)]
 pub struct RTorus {
     //内圆半径
     pub rins: f32,
     //外圆半径
     pub rout: f32,
     pub height: f32,
-    pub angle: f32,  //旋转角度
+    pub angle: f32, //旋转角度
+    #[serde(default)]
+    pub mesh_caliber: FacetCaliber,
 }
 
 impl Default for RTorus {
@@ -192,6 +231,17 @@ impl Default for RTorus {
             rout: 1.0,
             height: 1.0,
             angle: 90.0,
+            mesh_caliber: FacetCaliber::default(),
+        }
+    }
+}
+
+impl RTorus {
+    pub fn facet_caliber(&self) -> FacetCaliber {
+        if self.mesh_caliber.is_explicit() {
+            self.mesh_caliber
+        } else {
+            rectangular_torus_caliber(self.rout as f64, self.angle as f64)
         }
     }
 }
@@ -199,7 +249,11 @@ impl Default for RTorus {
 impl VerifiedShape for RTorus {
     #[inline]
     fn check_valid(&self) -> bool {
-        self.rout > 0.0 && self.rins > 0.0 && self.angle.abs() > 0.0 && (self.rout - self.rins) > f32::EPSILON && self.height > f32::EPSILON
+        self.rout > 0.0
+            && self.rins > 0.0
+            && self.angle.abs() > 0.0
+            && (self.rout - self.rins) > f32::EPSILON
+            && self.height > f32::EPSILON
     }
 }
 
@@ -219,9 +273,13 @@ impl BrepShapeTrait for RTorus {
         let e = builder::tsweep(&v, Vector3::new(0.0, 0.0, h));
         let f = builder::tsweep(&e, Vector3::new(d, 0.0, 0.0));
 
-        let mut solid = builder::rsweep(&f, Point3::new(0.0, 0.0, 0.0),
-                                        Vector3::new(0.0, 0.0, 1.0),
-                                        Rad(self.angle.to_radians() as f64)).into_boundaries();
+        let mut solid = builder::rsweep(
+            &f,
+            Point3::new(0.0, 0.0, 0.0),
+            Vector3::new(0.0, 0.0, 1.0),
+            Rad(self.angle.to_radians() as f64),
+        )
+        .into_boundaries();
         return solid.pop();
     }
 
@@ -242,7 +300,9 @@ impl BrepShapeTrait for RTorus {
         let left = Edge::segment(p4, p1);
 
         let wire = Wire::from_edges([&top, &right, &bottom, &left].into_iter())?;
-        let r = wire.to_face().revolve(DVec3::ZERO, DVec3::Z, Some(self.angle.degrees()));
+        let r = wire
+            .to_face()
+            .revolve(DVec3::ZERO, DVec3::Z, Some(self.angle.degrees()));
         return Ok(r.into_shape().into());
     }
 
@@ -250,10 +310,10 @@ impl BrepShapeTrait for RTorus {
         let mut hasher = DefaultHasher::new();
         hash_f32(self.rins / self.rout, &mut hasher);
         hash_f32(self.angle, &mut hasher);
+        self.facet_caliber().hash(&mut hasher);
         "rtorus".hash(&mut hasher);
         hasher.finish()
     }
-
 
     fn gen_unit_shape(&self) -> Box<dyn BrepShapeTrait> {
         let rins = self.rins / self.rout;
@@ -262,6 +322,7 @@ impl BrepShapeTrait for RTorus {
             rout: 1.0,
             height: 1.0,
             angle: self.angle,
+            mesh_caliber: self.facet_caliber(),
         };
         Box::new(unit)
     }
@@ -278,9 +339,7 @@ impl BrepShapeTrait for RTorus {
     }
 
     fn convert_to_geo_param(&self) -> Option<PdmsGeoParam> {
-        Some(
-            PdmsGeoParam::PrimRTorus(self.clone())
-        )
+        Some(PdmsGeoParam::PrimRTorus(self.clone()))
     }
 }
 
@@ -295,6 +354,7 @@ impl From<&AttrMap> for RTorus {
             rout,
             height,
             angle,
+            mesh_caliber: FacetCaliber::default(),
         }
     }
 }
@@ -304,7 +364,6 @@ impl From<AttrMap> for RTorus {
         (&m).into()
     }
 }
-
 
 impl From<&NamedAttrMap> for RTorus {
     fn from(m: &NamedAttrMap) -> Self {
@@ -317,6 +376,7 @@ impl From<&NamedAttrMap> for RTorus {
             rout,
             height,
             angle,
+            mesh_caliber: FacetCaliber::default(),
         }
     }
 }
@@ -326,4 +386,3 @@ impl From<NamedAttrMap> for RTorus {
         (&m).into()
     }
 }
-
