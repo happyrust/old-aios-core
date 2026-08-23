@@ -7,8 +7,6 @@ use serde::{Serialize, Deserialize};
 use crate::parsed_data::geo_params_data::PdmsGeoParam;
 use crate::types::attmap::AttrMap;
 use crate::prim_geo::basic::*;
-#[cfg(feature = "occ")]
-use opencascade::primitives::*;
 use crate::shape::pdms_shape::*;
 use bevy_ecs::prelude::*;
 use crate::NamedAttrMap;
@@ -55,11 +53,6 @@ impl BrepShapeTrait for SBox {
         self.size.x = self.size.x.min(l);
         self.size.y = self.size.y.min(l);
         self.size.z = self.size.z.min(l);
-    }
-
-    #[cfg(feature = "occ")]
-    fn gen_occ_shape(&self) -> anyhow::Result<OccSharedShape> {
-        Ok(BOX_SHAPE.clone())
     }
 
     fn hash_unit_mesh_params(&self) -> u64 {

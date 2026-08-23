@@ -28,10 +28,6 @@ use std::panic::AssertUnwindSafe;
 #[cfg(feature = "truck")]
 use truck_base::cgmath64::{InnerSpace, MetricSpace, Point3, Rad, Vector3};
 
-#[cfg(feature = "occ")]
-use crate::prim_geo::basic::OccSharedShape;
-#[cfg(feature = "occ")]
-use opencascade::primitives::{Edge, Face, Wire};
 use parry2d::bounding_volume::Aabb;
 use parry2d::math::Point;
 #[cfg(feature = "truck")]
@@ -68,51 +64,6 @@ pub fn circus_center(pt0: Point3, pt1: Point3, pt2: Point3) -> Point3 {
     let u = (b2 * a2 - ab * b2) / (2.0 * det);
     let v = (-ab * a2 + b2 * a2) / (2.0 * det);
     pt0 + u * vec0 + v * vec1
-}
-
-#[cfg(feature = "occ")]
-///生成occ的wire
-pub fn gen_occ_spline_wire(loops: &Vec<Vec<Vec3>>, thick: f32) -> anyhow::Result<Wire> {
-    let verts = &loops[0];
-    if verts.len() != 3 {
-        return Err(anyhow!("SPINE number is not 3".to_string())); //先假定必须有三个
-    }
-
-    let pt0 = verts[0];
-    let transit = verts[1];
-    let pt1 = verts[2];
-
-    let vec0 = (pt0 - transit).normalize();
-    let vec1 = (pt1 - transit).normalize();
-    let origin = cal_circus_center(pt0, pt1, transit);
-    let _angle = PI - vec0.angle_between(vec1);
-    let mut rot_axis = Vec3::Z;
-    if (vec0.cross(vec1)).dot(Vec3::Z) > 0.0 {
-        rot_axis = -Vec3::Z;
-    }
-    let _radius = origin.distance(pt0);
-
-    let v0 = (pt0 - origin).normalize();
-    let v1 = (pt1 - origin).normalize();
-
-    let half_thick = thick / 2.0;
-    let p0 = (pt0 - v0 * half_thick).as_dvec3();
-    let p1 = (pt1 - v1 * half_thick).as_dvec3();
-    let p2 = (pt1 + v1 * half_thick).as_dvec3();
-    let p3 = (pt0 + v0 * half_thick).as_dvec3();
-
-    let t_v = (transit - origin).normalize();
-    let t0 = (transit - (half_thick * t_v)).as_dvec3();
-    let t1 = (transit + (half_thick * t_v)).as_dvec3();
-
-    let edges = vec![
-        Edge::arc(p0, p1, t0),
-        Edge::segment(p1, p2),
-        Edge::arc(p2, p3, t1),
-        Edge::segment(p3, p0),
-    ];
-
-    Ok(Wire::from_edges(&edges)?)
 }
 
 #[cfg(feature = "truck")]
@@ -1022,58 +973,6 @@ pub fn gen_polyline_original(pts: &Vec<Vec3>) -> anyhow::Result<Polyline> {
     Ok(final_polyline)
 }
 
-///生成occ的wire
-#[cfg(feature = "occ")]
-pub fn gen_occ_wires(loops: &Vec<Vec<Vec3>>) -> anyhow::Result<Vec<Wire>> {
-    if loops[0].len() < 3 {
-        return Err(anyhow!("第一个 wire 顶点数量不够，小于3。"));
-    }
-    let mut pos_poly = gen_polyline_original(&loops[0])?;
-    if pos_poly.vertex_data.len() < 3 {
-        return Err(anyhow!("pos_poly 顶点数量不够，小于3。"));
-    }
-
-    for pts in loops.iter().skip(1) {
-        let Ok(neg) = gen_polyline_original(pts) else {
-            continue;
-        };
-        let mut r = pos_poly.boolean(&neg, BooleanOp::Not);
-        if r.pos_plines.len() > 0 {
-            pos_poly = r.pos_plines.remove(0).pline;
-        }
-    }
-    #[cfg(feature = "debug_wire")]
-    println!(
-        "final occ polyline: {}",
-        polyline_to_debug_json_str(&pos_poly)
-    );
-
-    let mut wires = vec![];
-    let mut edges = vec![];
-    let mut seg_count = 0;
-    for (p, q) in pos_poly.iter_segments() {
-        if p.bulge.abs() < 0.001 {
-            edges.push(Edge::segment(
-                DVec3::new(p.x, p.y, 0.0),
-                DVec3::new(q.x, q.y, 0.0),
-            ));
-        } else {
-            let m = seg_midpoint(p, q);
-            edges.push(Edge::arc(
-                DVec3::new(p.x, p.y, 0.0),
-                DVec3::new(m.x, m.y, 0.0),
-                DVec3::new(q.x, q.y, 0.0),
-            ));
-        }
-        seg_count += 1;
-    }
-    if seg_count < 1 {
-        return Err(anyhow!("生成的线段数量小于1"));
-    }
-    wires.push(Wire::from_edges(&edges)?);
-    Ok(wires)
-}
-
 pub fn check_wire_ok(pts: &Vec<Vec3>, fradius_vec: &Vec<f32>) -> bool {
     let mut polyline = Polyline::new_closed();
     for i in 0..pts.len() {
@@ -1453,21 +1352,6 @@ pub fn test_gen_polyline_complex_shape() {
     ];
 
     let polyline = gen_polyline(&pts).expect("Failed to generate polyline");
-
-    #[cfg(feature = "occ")]
-    {
-        let occ_wires = gen_occ_wires(&vec![pts.clone()]).expect("Failed to generate OCC wires");
-
-        // Verify the generated OCC wire has the expected properties
-        assert_eq!(occ_wires.len(), 1, "Expected a single OCC wire");
-        let occ_wire = &occ_wires[0];
-
-        // Check that the OCC wire has at least some edges
-        // assert!(
-        //     occ_wire.edges().len() > 3,
-        //     "Expected a valid OCC wire with multiple edges"
-        // );
-    }
 
     // Verify the generated polyline has the expected properties
     // assert!(polyline.is_closed());

@@ -13,8 +13,6 @@ use crate::parsed_data::geo_params_data::PdmsGeoParam;
 use crate::prim_geo::basic::*;
 use crate::prim_geo::facet_caliber::{FacetCaliber, sphere_caliber};
 use crate::shape::pdms_shape::{BrepShapeTrait, PlantMesh, RsVec3, VerifiedShape};
-#[cfg(feature = "occ")]
-use opencascade::primitives::*;
 use serde::{Deserialize, Serialize};
 
 use crate::NamedAttrMap;
@@ -85,13 +83,6 @@ impl BrepShapeTrait for Sphere {
         vec![self.center.into()]
     }
 
-    //OCC 的生成
-    #[cfg(feature = "occ")]
-    fn gen_occ_shape(&self) -> anyhow::Result<OccSharedShape> {
-        Ok(OccSharedShape::new(
-            Shape::sphere(self.radius as f64).build(),
-        ))
-    }
 
     fn hash_unit_mesh_params(&self) -> u64 {
         let mut hasher = std::collections::hash_map::DefaultHasher::new();

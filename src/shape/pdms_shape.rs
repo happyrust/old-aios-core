@@ -37,13 +37,6 @@ use crate::tool::float_tool::f32_round_3;
 use parry3d::bounding_volume::BoundingVolume;
 
 use crate::geometry::PlantGeoData;
-#[cfg(feature = "occ")]
-use crate::prim_geo::basic::OccSharedShape;
-#[cfg(feature = "occ")]
-use opencascade::primitives::{Compound, IntoShape, Shape};
-
-pub const TRIANGLE_TOL: f64 = 0.01;
-
 pub trait VerifiedShape {
     fn check_valid(&self) -> bool {
         true
@@ -115,32 +108,6 @@ impl PlantMesh {
 }
 
 impl PlantMesh {
-    ///生成occ mesh
-    #[cfg(feature = "occ")]
-    pub fn gen_occ_mesh(shape: &Shape, tol: f64) -> anyhow::Result<Self> {
-        let mut aabb = Aabb::new_invalid();
-        let mesh = shape.mesh_with_tolerance(tol)?;
-        let vertices = mesh
-            .vertices
-            .iter()
-            .map(|&x| x.as_vec3())
-            .collect::<Vec<_>>();
-        for point in vertices.iter() {
-            aabb.take_point(nalgebra::Point3::new(
-                point.x as f32,
-                point.y as f32,
-                point.z as f32,
-            ));
-        }
-        ///生成mesh
-        Ok(PlantMesh {
-            indices: mesh.indices.iter().map(|&x| x as u32).collect(),
-            vertices,
-            normals: mesh.normals.iter().map(|&x| x.as_vec3()).collect(),
-            wire_vertices: vec![],
-            aabb: Some(aabb),
-        })
-    }
 
     ///生成tri mesh
     #[inline]
@@ -441,11 +408,6 @@ pub trait BrepShapeTrait: Downcast + VerifiedShape + Debug + Send + Sync + DynCl
     ///限制参数大小，主要是对负实体的不合理进行限制
     fn apply_limit_by_size(&mut self, _limit_size: f32) {}
 
-    #[cfg(feature = "occ")]
-    fn gen_occ_shape(&self) -> anyhow::Result<OccSharedShape> {
-        return Err(anyhow!("不存在该occ shape"));
-    }
-
     //计算单元模型的参数hash值，也就是做成被可以复用的模型后的hash
     fn hash_unit_mesh_params(&self) -> u64 {
         0
@@ -461,12 +423,6 @@ pub trait BrepShapeTrait: Downcast + VerifiedShape + Debug + Send + Sync + DynCl
     fn gen_unit(&self, tol_ratio: Option<f32>) -> anyhow::Result<PlantGeoData> {
         // self.gen_unit_shape().gen_plant_geo_data(tol_ratio)
         todo!("not support")
-    }
-
-    #[cfg(not(target_arch = "wasm32"))]
-    fn gen_unit_occ_shape(&self, tol_ratio: Option<f32>) -> anyhow::Result<PlantGeoData> {
-        // self.gen_unit_shape().gen_plant_occ_geo(tol_ratio)
-        todo!("wasm32 not support")
     }
 
     #[cfg(target_arch = "wasm32")]
@@ -493,34 +449,6 @@ pub trait BrepShapeTrait: Downcast + VerifiedShape + Debug + Send + Sync + DynCl
     #[inline]
     fn tol(&self) -> f32 {
         TRI_TOL
-    }
-
-    #[cfg(feature = "occ")]
-    fn gen_plant_geo_data(&self, tol_ratio: Option<f32>) -> anyhow::Result<PlantGeoData> {
-        let geo_hash = self.hash_unit_mesh_params();
-
-        let shape = self.gen_occ_shape()?;
-
-        let mut aabb = Aabb::new_invalid();
-        for edge in shape.edges() {
-            for point in edge.approximation_segments() {
-                aabb.take_point(nalgebra::Point3::new(
-                    point.x as f32,
-                    point.y as f32,
-                    point.z as f32,
-                ));
-            }
-        }
-
-        let mesh =
-            shape.mesh_with_tolerance(self.tol() as f64 * tol_ratio.unwrap_or(2.0) as f64)?;
-
-        Ok(PlantGeoData {
-            geo_hash,
-            aabb: Some(aabb),
-        })
-
-        // Err(anyhow!("occ shape meshed failed"))
     }
 
     ///生成mesh

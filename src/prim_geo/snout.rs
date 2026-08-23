@@ -19,12 +19,7 @@ use truck_modeling::Shell;
 use truck_modeling::builder::*;
 
 use crate::NamedAttrMap;
-#[cfg(feature = "occ")]
-use crate::prim_geo::basic::OccSharedShape;
 use bevy_ecs::prelude::*;
-#[cfg(feature = "occ")]
-use opencascade::primitives::*;
-
 #[derive(
     Component,
     Debug,
@@ -133,35 +128,6 @@ impl BrepShapeTrait for LSnout {
     fn tol(&self) -> f32 {
         //以最小的圆精度为准
         0.005 * ((self.pbdm + self.ptdm) / 2.0).max(1.0)
-    }
-
-    #[cfg(feature = "occ")]
-    fn gen_occ_shape(&self) -> anyhow::Result<OccSharedShape> {
-        let rt = self.ptdm / 2.0;
-        let rb = self.pbdm / 2.0;
-
-        let a_dir = self.paax_dir.normalize();
-        let (p0, p1) = self.end_centers();
-
-        let mut circles = vec![];
-        let mut verts = vec![];
-        if self.pbdm < f32::EPSILON {
-            verts.push(Vertex::new(p0.as_dvec3()));
-        } else {
-            let circle = Wire::circle(rb as _, p0.as_dvec3(), a_dir.as_dvec3());
-            circles.push(circle);
-        }
-
-        if self.ptdm < f32::EPSILON {
-            verts.push(Vertex::new(p1.as_dvec3()));
-        } else {
-            let circle = Wire::circle(rt as _, p1.as_dvec3(), a_dir.as_dvec3());
-            circles.push(circle);
-        }
-
-        Ok(OccSharedShape::new(
-            Solid::loft_with_points(circles.iter(), verts.iter())?.into(),
-        ))
     }
 
     #[cfg(feature = "truck")]

@@ -19,10 +19,6 @@ use crate::shape::pdms_shape::{BrepShapeTrait, PlantMesh, RsVec3, TRI_TOL, Verif
 use crate::types::attmap::AttrMap;
 
 use crate::NamedAttrMap;
-#[cfg(feature = "occ")]
-use opencascade::primitives::*;
-#[cfg(feature = "occ")]
-use opencascade::workplane::Workplane;
 #[cfg(feature = "truck")]
 use truck_modeling::*;
 
@@ -214,16 +210,6 @@ impl BrepShapeTrait for LCylinder {
         hasher.finish()
     }
 
-    /// 如果是常规的基本体生成，直接跳过, 复用已经生成好的
-    #[cfg(feature = "occ")]
-    fn gen_occ_shape(&self) -> anyhow::Result<OccSharedShape> {
-        if !self.check_valid() {
-            return Err(anyhow::anyhow!("Not valid LCylinder"));
-        }
-
-        Ok(CYLINDER_SHAPE.clone())
-    }
-
     fn gen_unit_shape(&self) -> Box<dyn BrepShapeTrait> {
         Box::new(Self {
             mesh_caliber: self.facet_caliber(),
@@ -391,46 +377,6 @@ impl BrepShapeTrait for SCylinder {
         self.phei = self.phei.min(l);
         // dbg!(self.phei);
         self.pdia = self.pdia.min(l);
-    }
-
-    #[cfg(feature = "occ")]
-    fn gen_occ_shape(&self) -> anyhow::Result<OccSharedShape> {
-        if self.is_sscl() {
-            let dir = DVec3::Z;
-            let r = self.pdia as f64 / 2.0;
-            let ext_len = self.phei as f64;
-            let mut circle = Workplane::xy().circle(0.0, 0.0, r)?;
-
-            //还是要和extrude 区分出来
-            let scale_x = 1.0 / self.btm_shear_angles[0].to_radians().cos() as f64;
-            let scale_y = 1.0 / self.btm_shear_angles[1].to_radians().cos() as f64;
-            let scale_mat = DMat4::from_scale(DVec3::new(scale_x, scale_y, 1.0));
-            // dbg!(&self.btm_shear_angles);
-            let transform_btm =
-                DMat4::from_axis_angle(DVec3::Y, -(self.btm_shear_angles[0].to_radians() as f64))
-                    * DMat4::from_axis_angle(
-                        DVec3::X,
-                        (self.btm_shear_angles[1].to_radians() as f64),
-                    )
-                    * scale_mat;
-
-            // dbg!(&self.top_shear_angles);
-            let scale_x = 1.0 / self.top_shear_angles[0].to_radians().cos() as f64;
-            let scale_y = 1.0 / self.top_shear_angles[1].to_radians().cos() as f64;
-            let scale_mat = DMat4::from_scale(DVec3::new(scale_x, scale_y, 1.0));
-            let transform_top = DMat4::from_translation(dir * ext_len as f64)
-                * DMat4::from_axis_angle(DVec3::Y, -(self.top_shear_angles[0].to_radians() as f64))
-                * DMat4::from_axis_angle(DVec3::X, (self.top_shear_angles[1].to_radians() as f64))
-                * scale_mat;
-            let btm_circe = circle.transformed_by_gmat(&transform_btm)?;
-            let top_circle = circle.transformed_by_gmat(&transform_top)?;
-
-            Ok(OccSharedShape::new(
-                Solid::loft([btm_circe, top_circle].iter()).into(),
-            ))
-        } else {
-            Ok(CYLINDER_SHAPE.clone())
-        }
     }
 
     fn hash_unit_mesh_params(&self) -> u64 {

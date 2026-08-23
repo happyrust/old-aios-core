@@ -20,17 +20,6 @@ use crate::tool::float_tool::hash_f32;
 use crate::types::attmap::AttrMap;
 use serde::{Deserialize, Serialize};
 
-#[cfg(feature = "occ")]
-use crate::prim_geo::basic::OccSharedShape;
-#[cfg(feature = "occ")]
-use opencascade::angle::ToAngle;
-#[cfg(feature = "occ")]
-use opencascade::primitives::IntoShape;
-#[cfg(feature = "occ")]
-use opencascade::primitives::{Shape, Wire};
-#[cfg(feature = "occ")]
-use opencascade::workplane::Workplane;
-
 #[derive(
     Component,
     Debug,
@@ -243,21 +232,6 @@ impl BrepShapeTrait for CTorus {
             return solid.pop();
         }
         None
-    }
-
-    #[cfg(feature = "occ")]
-    fn gen_occ_shape(&self) -> anyhow::Result<OccSharedShape> {
-        let r1 = (self.rins + self.rout) as f64 / 2.0;
-        let r2 = (self.rout - self.rins) as f64 / 2.0;
-
-        let center = DVec2::new(r1, 0.0);
-        let face = Workplane::xz()
-            .translated(center.extend(0.0))
-            .circle(0.0, 0.0, r2)
-            .unwrap()
-            .to_face();
-        let r = face.revolve(DVec3::ZERO, DVec3::Z, Some(self.angle.degrees()));
-        return Ok(OccSharedShape::new(r.into_shape()));
     }
 
     fn hash_unit_mesh_params(&self) -> u64 {

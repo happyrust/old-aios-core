@@ -11,17 +11,10 @@ use truck_meshalgo::prelude::*;
 #[cfg(feature = "truck")]
 use truck_modeling::{Shell, Surface, Wire, builder};
 
-#[cfg(feature = "occ")]
-use crate::prim_geo::basic::OccSharedShape;
 use crate::prim_geo::wire::*;
 use crate::shape::pdms_shape::*;
 use crate::tool::float_tool::{f32_round_3, hash_f32, hash_vec3};
 use bevy_ecs::prelude::*;
-#[cfg(feature = "occ")]
-use opencascade::primitives::*;
-#[cfg(feature = "occ")]
-use opencascade::workplane::Workplane;
-
 #[derive(
     Component,
     Debug,
@@ -95,37 +88,6 @@ impl BrepShapeTrait for Extrusion {
     fn apply_limit_by_size(&mut self, l: f32) {
         self.height = self.height.min(l);
         dbg!(&self.height);
-    }
-
-    #[cfg(feature = "occ")]
-    fn gen_occ_shape(&self) -> anyhow::Result<OccSharedShape> {
-        if self.verts.len() == 0 || self.verts[0].len() < 3 {
-            return Err(anyhow!("Extrusion params not valid."));
-        }
-        let face = if let CurveType::Spline(thick) = self.cur_type {
-            gen_occ_spline_wire(&self.verts, thick).map(|x| x.to_face())
-        } else {
-            gen_occ_wires(&self.verts)
-                .map(|x| Face::from_wires(&x))
-                .flatten()
-        };
-        match face {
-            Err(e) => {
-                #[cfg(feature = "debug_wire")]
-                {
-                    dbg!(&e);
-                    dbg!(self);
-                }
-                return Err(anyhow!("Extrusion gen_occ_shape error:{}", e));
-            }
-            Ok(f) => {
-                let shape = OccSharedShape::new(
-                    f.extrude(DVec3::new(0., 0.0, self.height as _))
-                        .into_shape(),
-                );
-                Ok(shape)
-            }
-        }
     }
 
     fn hash_unit_mesh_params(&self) -> u64 {
@@ -217,23 +179,3 @@ impl BrepShapeTrait for Extrusion {
     }
 }
 
-#[cfg(feature = "truck")]
-#[test]
-fn test_circle_fradius() {
-    let ext = Extrusion {
-        verts: vec![
-            Vec3::new(125.0, 125.0, 227.0),
-            Vec3::new(125.0, -125.0, 227.0),
-            Vec3::new(-125.0, -125.0, 227.0),
-            Vec3::new(-125.0, 125.0, 227.0),
-        ],
-        fradius_vec: vec![125.0; 4],
-        height: 100.0,
-        ..Default::default()
-    };
-    let _r = ext.gen_brep_shell();
-    // dbg!(r);
-    let occ_shape = ext.gen_occ_shape().unwrap();
-
-    occ_shape.write_step("circle_fradius.step").unwrap();
-}

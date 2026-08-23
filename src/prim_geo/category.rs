@@ -585,8 +585,8 @@ pub fn convert_to_brep_shapes(geom: &CateGeoParam) -> Option<CateBrepShape> {
             }
             let pbax_dir = z_dir.cross(paax_dir).normalize_or_zero();
             // 与上面 Revolution 同一道卡。少了它，轮廓解不出来时会造出一个空的
-            // 挤出体：`gen_occ_shape` 后面必然拒绝它，但它已经被 hash、落库、
-            // 挂上 geo_relate 了——而且所有空轮廓算出来是同一个 hash，一整批
+            // 挤出体，但它已经被 hash、落库、挂上 geo_relate 了——而且所有
+            // 空轮廓算出来是同一个 hash，一整批
             // 构件会共用这一条建不出形状的几何。
             if d.verts.len() <= 2 {
                 return None;

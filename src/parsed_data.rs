@@ -125,9 +125,7 @@ impl Default for CateAxisParam {
 }
 
 pub mod geo_params_data {
-    #[cfg(feature = "occ")]
-    use crate::prim_geo::basic::OccSharedShape;
-    use crate::prim_geo::ctorus::CTorus;
+        use crate::prim_geo::ctorus::CTorus;
     use crate::prim_geo::dish::Dish;
     use crate::prim_geo::extrusion::Extrusion;
     use crate::prim_geo::polyhedron::Polyhedron;
@@ -142,9 +140,7 @@ pub mod geo_params_data {
     use crate::rvm_types::RvmShapeTypeData;
     use crate::shape::pdms_shape::{BrepShapeTrait, RsVec3, VerifiedShape};
     use anyhow::anyhow;
-    #[cfg(feature = "occ")]
-    use opencascade::primitives::*;
-    use serde_derive::{Deserialize, Serialize};
+        use serde_derive::{Deserialize, Serialize};
 
     #[derive(Clone, Serialize, Deserialize, Debug, Default)]
     pub enum CateGeoParam {
@@ -317,30 +313,6 @@ pub mod geo_params_data {
                 PdmsGeoParam::PrimPolyhedron(s) => s.tol() as f64,
                 PdmsGeoParam::CompoundShape => 0.0,
                 _ => 0.0,
-            }
-        }
-
-        #[cfg(feature = "occ")]
-        pub fn gen_occ_shape(&self) -> anyhow::Result<OccSharedShape> {
-            if !self.check_valid() {
-                return Err(anyhow!("Invalid shape"));
-            }
-            match self {
-                PdmsGeoParam::PrimSCylinder(s) => s.gen_occ_shape(),
-                PdmsGeoParam::PrimLCylinder(s) => s.gen_occ_shape(),
-                PdmsGeoParam::PrimExtrusion(s) => s.gen_occ_shape(),
-                PdmsGeoParam::PrimLoft(s) => s.gen_occ_shape(),
-                PdmsGeoParam::PrimBox(s) => s.gen_occ_shape(),
-                PdmsGeoParam::PrimLSnout(s) => s.gen_occ_shape(),
-                PdmsGeoParam::PrimDish(s) => s.gen_occ_shape(),
-                PdmsGeoParam::PrimSphere(s) => s.gen_occ_shape(),
-                PdmsGeoParam::PrimCTorus(s) => s.gen_occ_shape(),
-                PdmsGeoParam::PrimRTorus(s) => s.gen_occ_shape(),
-                PdmsGeoParam::PrimPyramid(s) => s.gen_occ_shape(),
-                PdmsGeoParam::PrimLPyramid(s) => s.gen_occ_shape(),
-                PdmsGeoParam::PrimRevolution(s) => s.gen_occ_shape(),
-                PdmsGeoParam::PrimPolyhedron(s) => s.gen_occ_shape(),
-                _ => Err(anyhow!("Not support this shape")),
             }
         }
 

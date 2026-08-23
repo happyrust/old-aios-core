@@ -1,8 +1,6 @@
 #[cfg(all(feature = "gen_model", feature = "manifold"))]
 use crate::csg::manifold::*;
 use crate::parsed_data::geo_params_data::PdmsGeoParam;
-#[cfg(feature = "occ")]
-use crate::prim_geo::basic::OccSharedShape;
 use crate::prim_geo::wire::*;
 #[cfg(feature = "truck")]
 use crate::shape::pdms_shape::BrepMathTrait;
@@ -11,10 +9,6 @@ use crate::tool::float_tool::{f32_round_3, hash_f32, hash_vec3};
 use approx::AbsDiffEq;
 use approx::abs_diff_eq;
 use glam::{Vec2, Vec3};
-#[cfg(feature = "occ")]
-use opencascade::angle::ToAngle;
-#[cfg(feature = "occ")]
-use opencascade::primitives::*;
 use serde::{Deserialize, Serialize};
 use std::collections::hash_map::DefaultHasher;
 use std::hash::{Hash, Hasher};
@@ -120,26 +114,6 @@ impl BrepShapeTrait for Revolution {
             }
         }
         None
-    }
-
-    #[cfg(feature = "occ")]
-    fn gen_occ_shape(&self) -> anyhow::Result<OccSharedShape> {
-        let wires = gen_occ_wires(&self.verts)?;
-        let angle = if abs_diff_eq!(self.angle, 360.0, epsilon = 0.01)
-            || self.angle > 360.0
-            || self.angle == 0.0
-        {
-            360.0
-        } else {
-            self.angle as f64
-        };
-        // dbg!(angle);
-        let r = Face::from_wires(&wires)?.revolve(
-            self.rot_pt.as_dvec3(),
-            self.rot_dir.as_dvec3(),
-            Some(angle.degrees()),
-        );
-        return Ok(OccSharedShape::new(r.into_shape()));
     }
 
     fn hash_unit_mesh_params(&self) -> u64 {
