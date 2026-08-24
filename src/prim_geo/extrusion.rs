@@ -6,11 +6,6 @@ use glam::{DVec3, Vec2, Vec3};
 use serde::{Deserialize, Serialize};
 use std::collections::hash_map::DefaultHasher;
 use std::hash::{Hash, Hasher};
-#[cfg(feature = "truck")]
-use truck_meshalgo::prelude::*;
-#[cfg(feature = "truck")]
-use truck_modeling::{Shell, Surface, Wire, builder};
-
 #[cfg(feature = "occ")]
 use crate::prim_geo::basic::OccSharedShape;
 use crate::prim_geo::wire::*;
@@ -58,37 +53,6 @@ impl VerifiedShape for Extrusion {
 impl BrepShapeTrait for Extrusion {
     fn clone_dyn(&self) -> Box<dyn BrepShapeTrait> {
         Box::new(self.clone())
-    }
-
-    #[cfg(feature = "truck")]
-    fn gen_brep_shell(&self) -> Option<Shell> {
-        if !self.check_valid() {
-            return None;
-        }
-        if self.verts.len() < 3 {
-            return None;
-        }
-        let wire: Wire;
-        if let CurveType::Spline(thick) = self.cur_type {
-            wire = gen_spline_wire(&self.verts, thick).ok()?;
-        } else {
-            wire = gen_wire(&self.verts, &self.fradius_vec).ok()?;
-        };
-        if let Ok(mut face) = builder::try_attach_plane(&[wire.clone()]) {
-            if let Surface::Plane(plane) = face.surface() {
-                let extrude_dir = Vector3::new(0.0, 0.0, 1.0);
-                if plane.normal().dot(extrude_dir) < 0.0 {
-                    face = face.inverse();
-                }
-                let mut s = builder::tsweep(&face, extrude_dir * (f32_round_3(self.height)) as f64)
-                    .into_boundaries();
-                return s.pop();
-            }
-        } else {
-            dbg!(self);
-            println!("生成的wire有问题，数据：{:?}", self);
-        }
-        None
     }
 
     ///限制参数大小，主要是对负实体的不合理进行限制
@@ -170,70 +134,8 @@ impl BrepShapeTrait for Extrusion {
     }
 
     ///使用manifold生成拉身体的mesh
-    #[cfg(feature = "truck")]
-    fn gen_csg_mesh(&self) -> Option<PlantMesh> {
-        if !self.check_valid() {
-            return None;
-        }
-        let mut wire = gen_wire(&self.verts, &self.fradius_vec).ok()?;
-        if let Ok(mut face) = builder::try_attach_plane(&[wire.clone()]) {
-            if let Surface::Plane(plane) = face.surface() {
-                let extrude_dir = Vector3::new(0.0, 0.0, 1.0);
-                if plane.normal().dot(extrude_dir) < 0.0 {
-                    wire = wire.inverse();
-                }
-                let e_len = wire.len();
-                let pts = wire
-                    .edge_iter()
-                    .enumerate()
-                    .map(|(i, e)| {
-                        let curve = e.oriented_curve();
-                        let polyline =
-                            PolylineCurve::from_curve(&curve, curve.range_tuple(), self.tol() as _);
-                        let mut v = polyline
-                            .iter()
-                            .map(|x| Vec2::new(x.x as _, x.y as _))
-                            .collect::<Vec<_>>();
-                        if !v.is_empty() && i != (e_len - 1) {
-                            v.pop();
-                        }
-                        v
-                    })
-                    .flatten()
-                    .collect::<Vec<Vec2>>();
-                // dbg!(&pts);
-                unsafe {
-                    let mut cross_section = ManifoldCrossSectionRust::from_points(&pts);
-                    let manifold = cross_section.extrude(100.0, 0);
-                    return Some(PlantMesh::from(manifold));
-                }
-            }
-        }
-        None
-    }
-
     fn need_use_csg(&self) -> bool {
         false
     }
 }
 
-#[cfg(feature = "truck")]
-#[test]
-fn test_circle_fradius() {
-    let ext = Extrusion {
-        verts: vec![
-            Vec3::new(125.0, 125.0, 227.0),
-            Vec3::new(125.0, -125.0, 227.0),
-            Vec3::new(-125.0, -125.0, 227.0),
-            Vec3::new(-125.0, 125.0, 227.0),
-        ],
-        fradius_vec: vec![125.0; 4],
-        height: 100.0,
-        ..Default::default()
-    };
-    let _r = ext.gen_brep_shell();
-    // dbg!(r);
-    let occ_shape = ext.gen_occ_shape().unwrap();
-
-    occ_shape.write_step("circle_fradius.step").unwrap();
-}

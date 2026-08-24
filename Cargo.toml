@@ -14,16 +14,6 @@ default = [
 occ = ["dep:opencascade"]
 render = ["dep:bevy_render"]
 manifold = ["dep:manifold-sys"]
-truck = [
-    # "dep:truck-base",
-    # "dep:truck-geotrait",
-    # "dep:truck-geometry",
-    # "dep:truck-polymesh",
-    # "dep:truck-topology",
-    # "dep:truck-modeling",
-    # "dep:truck-meshalgo",
-    # "dep:truck-stepio",
-]
 gen_model = []
 debug_expr = []
 debug_wire = []
@@ -102,14 +92,6 @@ hash32 = "0.3.0"
 bincode = "1.3.3"
 clap = { version = "^4.0", features = ["derive"] }
 
-# truck-base = { version = "0.4.0", path = "../truck/truck-base", optional = true }
-# truck-geotrait = { version = "0.3.0", path = "../truck/truck-geotrait", optional = true }
-# truck-geometry = { version = "0.4.0", path = "../truck/truck-geometry", optional = true }
-# truck-polymesh = { version = "0.5.0", path = "../truck/truck-polymesh", optional = true }
-# truck-topology = { version = "0.5.0", path = "../truck/truck-topology", optional = true }
-# truck-modeling = { version = "0.5.1", path = "../truck/truck-modeling", optional = true }
-# truck-meshalgo = { version = "0.3.0", path = "../truck/truck-meshalgo", optional = true }
-# truck-stepio = { version = "0.2.0", path = "../truck/truck-stepio", optional = true }
 rkyv = { version = "0.7.42", features = ["hashbrown"] }
 serde_with = { version = "3.9.0", features = ["macros"] }
 

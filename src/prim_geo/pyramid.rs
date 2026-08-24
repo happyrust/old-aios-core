@@ -5,17 +5,10 @@ use serde::{Deserialize, Serialize};
 use std::collections::hash_map::DefaultHasher;
 use std::hash::{Hash, Hasher};
 use std::sync::Arc;
-#[cfg(feature = "truck")]
-use truck_meshalgo::prelude::*;
-#[cfg(feature = "truck")]
-use truck_modeling::builder::try_attach_plane;
-#[cfg(feature = "truck")]
-use truck_modeling::builder::*;
-
+use crate::NamedAttrMap;
 #[cfg(feature = "occ")]
 use crate::prim_geo::basic::OccSharedShape;
 use crate::shape::pdms_shape::{BrepShapeTrait, VerifiedShape};
-use crate::NamedAttrMap;
 use bevy_ecs::prelude::*;
 #[cfg(feature = "occ")]
 use opencascade::primitives::*;
@@ -101,58 +94,6 @@ impl BrepShapeTrait for Pyramid {
     }
 
     //涵盖的情况，需要考虑，上边只有一条边，和退化成点的情况
-    #[cfg(feature = "truck")]
-    fn gen_brep_shell(&self) -> Option<truck_modeling::Shell> {
-        //todo 以防止出现有单个点的情况，暂时用这个模拟
-        let tx = (self.pbtp as f64 / 2.0).max(0.001);
-        let ty = (self.pctp as f64 / 2.0).max(0.001);
-        let bx = (self.pbbt as f64 / 2.0).max(0.001);
-        let by = (self.pcbt as f64 / 2.0).max(0.001);
-        let ox = 0.5 * self.pbof as f64;
-        let oy = 0.5 * self.pcof as f64;
-        let h2 = 0.5 * (self.ptdi - self.pbdi) as f64;
-
-        let pts = vec![
-            builder::vertex(Point3::new(-tx + ox, -ty + oy, h2)),
-            builder::vertex(Point3::new(tx + ox, -ty + oy, h2)),
-            builder::vertex(Point3::new(tx + ox, ty + oy, h2)),
-            builder::vertex(Point3::new(-tx + ox, ty + oy, h2)),
-        ];
-        let ets = vec![
-            builder::line(&pts[0], &pts[1]),
-            builder::line(&pts[1], &pts[2]),
-            builder::line(&pts[2], &pts[3]),
-            builder::line(&pts[3], &pts[0]),
-        ];
-
-        let pts = vec![
-            builder::vertex(Point3::new(-bx - ox, -by - oy, -h2)),
-            builder::vertex(Point3::new(bx - ox, -by - oy, -h2)),
-            builder::vertex(Point3::new(bx - ox, by - oy, -h2)),
-            builder::vertex(Point3::new(-bx - ox, by - oy, -h2)),
-        ];
-        let ebs = vec![
-            builder::line(&pts[0], &pts[1]),
-            builder::line(&pts[1], &pts[2]),
-            builder::line(&pts[2], &pts[3]),
-            builder::line(&pts[3], &pts[0]),
-        ];
-
-        let mut faces = vec![];
-        if let Ok(f) = try_attach_plane(&[Wire::from_iter(&ebs)]) {
-            faces.push(f.inverse());
-        }
-        if let Ok(f) = try_attach_plane(&[Wire::from_iter(&ets)]) {
-            faces.push(f);
-        }
-        let mut shell: Shell = Shell::from(faces);
-        shell.push(builder::homotopy(&ebs[0], &ets[0]));
-        shell.push(builder::homotopy(&ebs[1], &ets[1]));
-        shell.push(builder::homotopy(&ebs[2], &ets[2]));
-        shell.push(builder::homotopy(&ebs[3], &ets[3]));
-        Some(shell)
-    }
-
     #[cfg(feature = "occ")]
     fn gen_occ_shape(&self) -> anyhow::Result<OccSharedShape> {
         //todo 以防止出现有单个点的情况，暂时用这个模拟
@@ -180,7 +121,7 @@ impl BrepShapeTrait for Pyramid {
         // }
         if tx + ty < 0.001 {
             verts.push(Vertex::new(DVec3::new(ox, oy, h2)));
-        } 
+        }
         //todo use line to generate
         // else if tx < 0.001 {
         //     let mut pts = vec![
@@ -196,7 +137,7 @@ impl BrepShapeTrait for Pyramid {
         //     ];
         //     dbg!(&pts);
         //     polys.push(Wire::from_ordered_points(pts)?);
-        // } 
+        // }
         else {
             let mut pts = vec![
                 DVec3::new(-tx + ox, -ty + oy, h2),
@@ -210,7 +151,7 @@ impl BrepShapeTrait for Pyramid {
         // dbg!(bx, by);
         if bx + by < 0.001 {
             verts.push(Vertex::new(DVec3::new(-ox, -oy, -h2)));
-        } 
+        }
         // else if bx < 0.001 {
         //     let mut pts = vec![
         //         DVec3::new(bx - ox, -by - oy, -h2),
@@ -225,7 +166,7 @@ impl BrepShapeTrait for Pyramid {
         //     ];
         //     dbg!(&pts);
         //     polys.push(Wire::from_ordered_points(pts)?);
-        // } 
+        // }
         else {
             let mut pts = vec![
                 DVec3::new(-bx - ox, -by - oy, -h2),

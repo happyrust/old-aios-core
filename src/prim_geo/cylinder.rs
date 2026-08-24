@@ -1,38 +1,41 @@
+use crate::parsed_data::geo_params_data::PdmsGeoParam;
+use bevy_ecs::prelude::*;
+use bevy_transform::prelude::Transform;
+use glam::{DMat4, DVec3, Mat4, Vec3};
+use nom::Parser;
+use serde::{Deserialize, Serialize};
 use std::collections::hash_map::DefaultHasher;
 use std::f64::consts::FRAC_PI_2;
 use std::hash::Hash;
 use std::hash::Hasher;
 use std::sync::Arc;
-use glam::{DMat4, DVec3, Mat4, Vec3};
-use bevy_ecs::prelude::*;
-use bevy_transform::prelude::Transform;
-use nom::Parser;
-use serde::{Deserialize, Serialize};
-use crate::parsed_data::geo_params_data::PdmsGeoParam;
 
-use crate::types::attmap::AttrMap;
 use crate::prim_geo::basic::*;
 use crate::prim_geo::helper::cal_ref_axis;
-#[cfg(feature = "truck")]
-use crate::shape::pdms_shape::BrepMathTrait;
 use crate::shape::pdms_shape::{BrepShapeTrait, PlantMesh, RsVec3, TRI_TOL, VerifiedShape};
+use crate::types::attmap::AttrMap;
 
-#[cfg(feature = "occ")]
-use opencascade::primitives::*;
 use crate::NamedAttrMap;
 #[cfg(feature = "occ")]
+use opencascade::primitives::*;
+#[cfg(feature = "occ")]
 use opencascade::workplane::Workplane;
-#[cfg(feature = "truck")]
-use truck_modeling::*;
-
-
 ///元件库里的LCylinder
-#[derive(Component, Debug, Clone, Serialize, Deserialize, rkyv::Archive, rkyv::Deserialize, rkyv::Serialize, )]
+#[derive(
+    Component,
+    Debug,
+    Clone,
+    Serialize,
+    Deserialize,
+    rkyv::Archive,
+    rkyv::Deserialize,
+    rkyv::Serialize,
+)]
 pub struct LCylinder {
     pub paxi_expr: String,
     pub paxi_pt: Vec3,
     //A Axis point
-    pub paxi_dir: Vec3,   //A Axis Direction
+    pub paxi_dir: Vec3, //A Axis Direction
 
     pub pbdi: f32,
     pub ptdi: f32,
@@ -40,7 +43,6 @@ pub struct LCylinder {
     pub pdia: f32,
     pub negative: bool,
 }
-
 
 impl Default for LCylinder {
     fn default() -> Self {
@@ -134,11 +136,7 @@ pub fn gen_unit_cylinder() -> PlantMesh {
         }
 
         for i in 1..(resolution - 1) {
-            indices.extend_from_slice(&[
-                offset,
-                offset + i + winding.1,
-                offset + i + winding.0,
-            ]);
+            indices.extend_from_slice(&[offset, offset + i + winding.1, offset + i + winding.0]);
         }
     };
 
@@ -161,33 +159,8 @@ impl BrepShapeTrait for LCylinder {
         Box::new(self.clone())
     }
 
-    #[cfg(feature = "truck")]
-    fn gen_brep_shell(&self) -> Option<truck_modeling::Shell> {
-        if !self.check_valid() { return None; }
-
-        let dir = self.paxi_dir.normalize();
-        let r = self.pdia / 2.0;
-        let c_pt = dir * self.pbdi + self.paxi_pt;
-        let center = c_pt.point3();
-        let ref_axis = cal_ref_axis(&dir);
-        let pt0 = c_pt + ref_axis * r;
-        let mut ext_len = self.ptdi - self.pbdi;
-        let mut ext_dir = dir.vector3();
-        if ext_len < 0.0 {
-            ext_dir = -ext_dir;
-            ext_len = -ext_len;
-        }
-        let v = builder::vertex(pt0.point3());
-        let w = builder::rsweep(&v, center, ext_dir, Rad(7.0));
-        let f = builder::try_attach_plane(&[w]).unwrap();
-        let mut s = builder::tsweep(&f, ext_dir * ext_len as f64).into_boundaries();
-        s.pop()
-    }
-
     fn convert_to_geo_param(&self) -> Option<PdmsGeoParam> {
-        Some(
-            PdmsGeoParam::PrimLCylinder(self.clone())
-        )
+        Some(PdmsGeoParam::PrimLCylinder(self.clone()))
     }
 
     fn hash_unit_mesh_params(&self) -> u64 {
@@ -197,7 +170,9 @@ impl BrepShapeTrait for LCylinder {
     /// 如果是常规的基本体生成，直接跳过, 复用已经生成好的
     #[cfg(feature = "occ")]
     fn gen_occ_shape(&self) -> anyhow::Result<OccSharedShape> {
-        if !self.check_valid() { return Err(anyhow::anyhow!("Not valid LCylinder")); }
+        if !self.check_valid() {
+            return Err(anyhow::anyhow!("Not valid LCylinder"));
+        }
 
         Ok(CYLINDER_SHAPE.clone())
     }
@@ -221,10 +196,16 @@ impl BrepShapeTrait for LCylinder {
     }
 }
 
-
-
-
-#[derive(Component, Debug, Clone, Serialize, Deserialize, rkyv::Archive, rkyv::Deserialize, rkyv::Serialize, )]
+#[derive(
+    Component,
+    Debug,
+    Clone,
+    Serialize,
+    Deserialize,
+    rkyv::Archive,
+    rkyv::Deserialize,
+    rkyv::Serialize,
+)]
 pub struct SCylinder {
     pub paxi_expr: String,
     pub paxi_pt: Vec3,
@@ -259,81 +240,67 @@ impl Default for SCylinder {
 }
 
 impl SCylinder {
+    /// Core3D `CSG_BasicSLC::getPrimGeom`（3.1 `0x107272D0`）在把 XTSH/YTSH/XBSH/YBSH
+    /// 喂给 `gm_CreateSlopeEndedCylinder` 之前，对每个剪切角做**且只做一次**折叠：
+    /// `> 90°` 减 180，然后 `< −90°` 加 180。不是取模：折完仍出界的输入（如 271° → 91°）
+    /// 由 libgm `GM_SlopeEndCyl::validate`（`0x10030300`，严格 (−90, 90)）响亮拒绝，
+    /// 本仓对应 `check_valid` 返回 false。折叠对已在 (−90, 90] 内的值是恒等，所以
+    /// 消费方重复调用是安全的。specs/009 T054，证据（gen-model 仓）
+    /// `docs/evidence/2026-08-24-ida-occ-retire-audit.md`。
+    #[inline]
+    pub fn fold_shear_angle_deg(deg: f32) -> f32 {
+        let deg = if deg > 90.0 { deg - 180.0 } else { deg };
+        if deg < -90.0 { deg + 180.0 } else { deg }
+    }
+
+    /// 折叠后的 `(btm, top)` 剪切角。本 crate 内该折叠只有这一处入口：身份哈希、
+    /// 落库规范值与几何后端都必须消费它，不得各折各的（T054）。
+    #[inline]
+    pub fn folded_shear_angles(&self) -> ([f32; 2], [f32; 2]) {
+        (
+            self.btm_shear_angles.map(Self::fold_shear_angle_deg),
+            self.top_shear_angles.map(Self::fold_shear_angle_deg),
+        )
+    }
+
+    /// 四个剪切角折叠后的规范副本。哈希与落库值取同一个规范值
+    /// （2026-08-13 双键 `param` 的教训）。
+    #[inline]
+    pub fn folded(&self) -> Self {
+        let (btm, top) = self.folded_shear_angles();
+        let mut c = self.clone();
+        c.btm_shear_angles = btm;
+        c.top_shear_angles = top;
+        c
+    }
+
     #[inline]
     pub fn is_sscl(&self) -> bool {
-        self.btm_shear_angles[0].abs() > f32::EPSILON ||
-            self.btm_shear_angles[1].abs() > f32::EPSILON ||
-            self.top_shear_angles[0].abs() > f32::EPSILON ||
-            self.top_shear_angles[1].abs() > f32::EPSILON
+        // 按折叠后的角判定：180° 这类输入折完是 0，几何上就是直柱，
+        // 走 SSCL 全参数哈希只会平白拆散复用。
+        let ([bx, by], [tx, ty]) = self.folded_shear_angles();
+        bx.abs() > f32::EPSILON
+            || by.abs() > f32::EPSILON
+            || tx.abs() > f32::EPSILON
+            || ty.abs() > f32::EPSILON
     }
 }
 
 impl VerifiedShape for SCylinder {
     #[inline]
     fn check_valid(&self) -> bool {
-        self.pdia > f32::EPSILON && self.phei.abs() > f32::EPSILON
+        // 剪切角折叠后必须严格落在 (−90°, 90°)——libgm `GM_SlopeEndCyl::validate`
+        // （`0x10030300`）的口径；折完仍出界（Core3D 只折一次，271° → 91°）响亮拒绝。
+        // `< 90.0` 的写法同时把 NaN 拒在门外。specs/009 T054。
+        let ([bx, by], [tx, ty]) = self.folded_shear_angles();
+        let angles_ok = [bx, by, tx, ty].iter().all(|a| a.abs() < 90.0);
+        self.pdia > f32::EPSILON && self.phei.abs() > f32::EPSILON && angles_ok
     }
 }
 
 impl BrepShapeTrait for SCylinder {
     fn clone_dyn(&self) -> Box<dyn BrepShapeTrait> {
         Box::new(self.clone())
-    }
-
-    #[cfg(feature = "truck")]
-    fn gen_brep_shell(&self) -> Option<truck_modeling::Shell> {
-        let dir = self.paxi_dir.normalize();
-        let dir = Vec3::Z;
-        let r = self.pdia / 2.0;
-        let c_pt = Vec3::ZERO;
-        let center = c_pt.point3();
-        let ref_axis = cal_ref_axis(&dir);
-        let pt0 = c_pt + ref_axis * r;
-        let ext_len = self.phei as f64;
-        let ext_dir = dir.vector3();
-        let mut reverse_dir = false;
-        if ext_len < 0.0 {
-            reverse_dir = true;
-        }
-        // dbg!(ext_dir);
-        let v = builder::vertex(pt0.point3());
-        let origin_w = builder::rsweep(&v, center, ext_dir, Rad(7.0));
-
-        //还是要和extrude 区分出来
-        let scale_x = 1.0 / self.btm_shear_angles[0].to_radians().cos() as f64;
-        let scale_y = 1.0 / self.btm_shear_angles[1].to_radians().cos() as f64;
-        // dbg!(&self.btm_shear_angles);
-        let transform_btm =
-            Matrix4::from_angle_y(-Rad(self.btm_shear_angles[0].to_radians() as f64))
-                * Matrix4::from_angle_x(Rad(self.btm_shear_angles[1].to_radians() as f64))
-                * Matrix4::from_nonuniform_scale(scale_x, scale_y, 1.0);
-
-        // dbg!(&self.top_shear_angles);
-        let scale_x = 1.0 / self.top_shear_angles[0].to_radians().cos() as f64;
-        let scale_y = 1.0 / self.top_shear_angles[1].to_radians().cos() as f64;
-        let transform_top = Matrix4::from_translation(ext_dir * ext_len as f64)
-            * Matrix4::from_angle_y(-Rad(self.top_shear_angles[0].to_radians() as f64))
-            * Matrix4::from_angle_x(Rad(self.top_shear_angles[1].to_radians() as f64))
-            * Matrix4::from_nonuniform_scale(scale_x, scale_y, 1.0);
-
-        let mut w_s = builder::transformed(&origin_w, transform_btm);
-        let mut w_e = builder::transformed(&origin_w, transform_top);
-        if let Ok(mut f) = builder::try_attach_plane(&[w_s.clone()])
-        {
-            let mut f_e = builder::try_attach_plane(&[w_e.clone()]).unwrap().inverse();
-            // dbg!(reverse_dir);
-            if !reverse_dir {
-                f = f.inverse();
-                f_e = f_e.inverse();
-            }
-            let h_w_s = w_s.split_off(w_s.len() / 2);
-            let h_w_e = w_e.split_off(w_e.len() / 2);
-            let face1 = builder::homotopy(w_s.front().unwrap(), &w_e.front().unwrap());
-            let face2 = builder::homotopy(h_w_s.front().unwrap(), &h_w_e.front().unwrap());
-            let shell = vec![f, f_e, face1, face2].into();
-            return Some(shell);
-        }
-        None
     }
 
     ///获得关键点
@@ -360,28 +327,33 @@ impl BrepShapeTrait for SCylinder {
             let ext_len = self.phei as f64;
             let mut circle = Workplane::xy().circle(0.0, 0.0, r)?;
 
+            // 剪切角先过 Core3D 的折叠（T054），与身份哈希消费同一份规范值。
+            let (btm_shear_angles, top_shear_angles) = self.folded_shear_angles();
+
             //还是要和extrude 区分出来
-            let scale_x = 1.0 / self.btm_shear_angles[0].to_radians().cos() as f64;
-            let scale_y = 1.0 / self.btm_shear_angles[1].to_radians().cos() as f64;
+            let scale_x = 1.0 / btm_shear_angles[0].to_radians().cos() as f64;
+            let scale_y = 1.0 / btm_shear_angles[1].to_radians().cos() as f64;
             let scale_mat = DMat4::from_scale(DVec3::new(scale_x, scale_y, 1.0));
-            // dbg!(&self.btm_shear_angles);
+            // dbg!(&btm_shear_angles);
             let transform_btm =
-                DMat4::from_axis_angle(DVec3::Y, -(self.btm_shear_angles[0].to_radians() as f64))
-                    * DMat4::from_axis_angle(DVec3::X, (self.btm_shear_angles[1].to_radians() as f64))
+                DMat4::from_axis_angle(DVec3::Y, -(btm_shear_angles[0].to_radians() as f64))
+                    * DMat4::from_axis_angle(DVec3::X, (btm_shear_angles[1].to_radians() as f64))
                     * scale_mat;
 
-            // dbg!(&self.top_shear_angles);
-            let scale_x = 1.0 / self.top_shear_angles[0].to_radians().cos() as f64;
-            let scale_y = 1.0 / self.top_shear_angles[1].to_radians().cos() as f64;
+            // dbg!(&top_shear_angles);
+            let scale_x = 1.0 / top_shear_angles[0].to_radians().cos() as f64;
+            let scale_y = 1.0 / top_shear_angles[1].to_radians().cos() as f64;
             let scale_mat = DMat4::from_scale(DVec3::new(scale_x, scale_y, 1.0));
             let transform_top = DMat4::from_translation(dir * ext_len as f64)
-                * DMat4::from_axis_angle(DVec3::Y, -(self.top_shear_angles[0].to_radians() as f64))
-                * DMat4::from_axis_angle(DVec3::X, (self.top_shear_angles[1].to_radians() as f64))
+                * DMat4::from_axis_angle(DVec3::Y, -(top_shear_angles[0].to_radians() as f64))
+                * DMat4::from_axis_angle(DVec3::X, (top_shear_angles[1].to_radians() as f64))
                 * scale_mat;
             let btm_circe = circle.transformed_by_gmat(&transform_btm)?;
             let top_circle = circle.transformed_by_gmat(&transform_top)?;
 
-            Ok(OccSharedShape::new(Solid::loft([btm_circe, top_circle].iter()).into()))
+            Ok(OccSharedShape::new(
+                Solid::loft([btm_circe, top_circle].iter()).into(),
+            ))
         } else {
             Ok(CYLINDER_SHAPE.clone())
         }
@@ -390,7 +362,9 @@ impl BrepShapeTrait for SCylinder {
     fn hash_unit_mesh_params(&self) -> u64 {
         if self.is_sscl() {
             let mut hasher = DefaultHasher::new();
-            let bytes = bincode::serialize(self).unwrap();
+            // 哈希折叠后的规范副本：135° 与 −45° 是同一个几何，必须同键；
+            // 且与 `gen_unit_shape` 落库的是同一个值（2026-08-13 双键教训）。T054。
+            let bytes = bincode::serialize(&self.folded()).unwrap();
             bytes.hash(&mut hasher);
             "SSCL".hash(&mut hasher);
             hasher.finish()
@@ -401,7 +375,7 @@ impl BrepShapeTrait for SCylinder {
 
     fn gen_unit_shape(&self) -> Box<dyn BrepShapeTrait> {
         if self.is_sscl() {
-            return Box::new(self.clone());
+            return Box::new(self.folded());
         }
         Box::new(Self::default())
     }
@@ -438,11 +412,8 @@ impl BrepShapeTrait for SCylinder {
     }
 
     fn convert_to_geo_param(&self) -> Option<PdmsGeoParam> {
-        Some(
-            PdmsGeoParam::PrimSCylinder(self.clone())
-        )
+        Some(PdmsGeoParam::PrimSCylinder(self.clone()))
     }
-
 
     ///直接通过基本体的参数，生成模型
     fn gen_csg_mesh(&self) -> Option<PlantMesh> {
@@ -478,7 +449,6 @@ impl From<AttrMap> for SCylinder {
     }
 }
 
-
 impl From<&NamedAttrMap> for SCylinder {
     fn from(m: &NamedAttrMap) -> Self {
         let phei = m.get_f32_or_default("HEIG");
@@ -499,5 +469,90 @@ impl From<&NamedAttrMap> for SCylinder {
 impl From<NamedAttrMap> for SCylinder {
     fn from(m: NamedAttrMap) -> Self {
         (&m).into()
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn sscl(btm: [f32; 2], top: [f32; 2]) -> SCylinder {
+        SCylinder {
+            pdia: 40.0,
+            phei: 100.0,
+            btm_shear_angles: btm,
+            top_shear_angles: top,
+            ..Default::default()
+        }
+    }
+
+    /// T054：折叠表手抄自 Core3D `CSG_BasicSLC::getPrimGeom`（`0x107272D0`）——
+    /// 每角一次 `>90 减 180`、再一次 `<−90 加 180`，不是取模。
+    /// 271° 折成 91（出界留给 validate/check_valid 拒），改成取模这条就红。
+    #[test]
+    fn the_shear_fold_matches_core3d() {
+        for (raw, folded) in [
+            (135.0_f32, -45.0_f32),
+            (-135.0, 45.0),
+            (91.0, -89.0),
+            (-91.0, 89.0),
+            (45.0, 45.0),
+            (-45.0, -45.0),
+            (180.0, 0.0),
+            (-180.0, 0.0),
+            (90.0, 90.0),
+            (-90.0, -90.0),
+            (271.0, 91.0),
+        ] {
+            assert_eq!(
+                SCylinder::fold_shear_angle_deg(raw),
+                folded,
+                "fold({raw}) 必须是 {folded}"
+            );
+        }
+    }
+
+    /// 135° 与 −45° 折叠后是同一个几何：同一个 `geo_hash`，且 `gen_unit_shape`
+    /// 落库的是同一个规范 param（哈希与落库值同源，2026-08-13 双键教训）。
+    #[test]
+    fn a_foldable_pair_shares_one_identity_and_one_canonical_param() {
+        let raw = sscl([135.0, 0.0], [0.0, 30.0]);
+        let canonical = sscl([-45.0, 0.0], [0.0, 30.0]);
+
+        assert!(raw.is_sscl() && canonical.is_sscl());
+        assert!(raw.check_valid() && canonical.check_valid());
+        assert_eq!(
+            raw.hash_unit_mesh_params(),
+            canonical.hash_unit_mesh_params(),
+            "折叠对必须同键"
+        );
+
+        let raw_param = raw.gen_unit_shape().convert_to_geo_param().unwrap();
+        let canonical_param = canonical.gen_unit_shape().convert_to_geo_param().unwrap();
+        assert_eq!(
+            serde_json::to_string(&raw_param).unwrap(),
+            serde_json::to_string(&canonical_param).unwrap(),
+            "同键必须落同一份规范 param，不得两个变体并进一个对象"
+        );
+    }
+
+    /// 折完仍出界的角响亮拒绝：90°（切面与轴平行）与 271°（折成 91°）都不可建；
+    /// NaN 也进不来。libgm `GM_SlopeEndCyl::validate` 的口径是严格 (−90, 90)。
+    #[test]
+    fn an_angle_still_out_of_range_after_the_fold_is_rejected() {
+        assert!(!sscl([90.0, 0.0], [0.0, 0.0]).check_valid());
+        assert!(!sscl([271.0, 0.0], [0.0, 0.0]).check_valid());
+        assert!(!sscl([f32::NAN, 0.0], [0.0, 0.0]).check_valid());
+        assert!(sscl([89.9, 0.0], [0.0, 0.0]).check_valid());
+        assert!(sscl([135.0, 0.0], [0.0, 0.0]).check_valid(), "135° 折成 −45°，可建");
+    }
+
+    /// 180° 的剪切角折完是 0：几何上就是直柱，必须走单位圆柱的复用身份，
+    /// 不得按 SSCL 全参数哈希白白拆散复用。
+    #[test]
+    fn a_180_degree_shear_folds_back_to_a_plain_cylinder() {
+        let c = sscl([180.0, 180.0], [-180.0, 180.0]);
+        assert!(!c.is_sscl());
+        assert_eq!(c.hash_unit_mesh_params(), CYLINDER_GEO_HASH);
     }
 }
