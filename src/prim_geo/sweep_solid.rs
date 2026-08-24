@@ -965,6 +965,8 @@ mod tests {
         assert_eq!(unit(&solid).extrude_dir, DVec3::Z);
     }
 
+    /// 建体引擎只取 path 的长度、一律沿 +Z 挤出，方向由元素 world_trans 携带；
+    /// 实例变换若再按 path 切向补方向，方向就被计两次（回退旧写法本测试即红）。
     #[test]
     fn direct_path_direction_lives_in_element_world_rotation() {
         let mut solid = reusable_line();
