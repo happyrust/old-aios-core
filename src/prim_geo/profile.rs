@@ -145,9 +145,13 @@ pub async fn create_profile_geos(
                     plax = profile.get_plax();
                     let bangle = att.get_f32("BANG").unwrap_or_default();
 
+                    // POSS/POSE 是世界系坐标：path 要和上面的 DRNS/DRNE 一样过 inv_quat
+                    // 拉回元素局部系（带 SPINE 的分支同口径——path 归一到局部，方向由
+                    // 元素的 world_trans 携带）。世界系向量直接落进局部系字段，会让
+                    // get_trans()/working_mitre_plane() 把方向再计一次。
                     let path = Line3D {
                         start: Default::default(),
-                        end: pose - poss,
+                        end: inv_quat.mul_vec3((pose - poss).as_dvec3()).as_vec3(),
                         is_spine: false,
                     };
 

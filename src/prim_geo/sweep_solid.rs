@@ -289,12 +289,12 @@ impl BrepShapeTrait for SweepSolid {
             SweepPath3D::Line(line) => line.length(),
             SweepPath3D::SpineArc(_) => 10.0,
         };
-        let spine = Self::set_spine_segment_transforms(
-            length,
-            self.plax,
-            self.lmirror,
-            self.travel_tangent(true),
-        );
+        // 建体引擎（manifold 的 sweep_solid_mesh、历史上的 gen_occ_shape）对直线扫掠
+        // 一律沿局部 +Z 挤出、只取 path 的长度：方向属于元素的 world_trans，不属于
+        // 实例变换。这里若再按 path 切向补 from_rotation_arc(Z, dir)，方向就被计了
+        // 两次（POSS→POSE 的墙实测整体多转 90°）。切向入参只服务真正的多段 SPINE
+        // 分段，元素级实例变换固定喂 +Z。
+        let spine = Self::set_spine_segment_transforms(length, self.plax, self.lmirror, DVec3::Z);
         let bang = Self::set_implied_bangs(self.bangle);
         bevy_transform::prelude::Transform {
             rotation: spine.rotation * bang,
@@ -631,8 +631,10 @@ mod tests {
         assert_eq!(unit(&solid).extrude_dir, DVec3::Z);
     }
 
+    /// 建体引擎只取 path 的长度、一律沿 +Z 挤出，方向由元素 world_trans 携带；
+    /// 实例变换若再按 path 切向补方向，方向就被计两次（回退旧写法本测试即红）。
     #[test]
-    fn world_path_direction_lives_in_instance_rotation() {
+    fn path_direction_stays_out_of_instance_rotation() {
         let mut solid = reusable_line();
         solid.path = SweepPath3D::Line(Line3D {
             start: Vec3::ZERO,
@@ -644,10 +646,10 @@ mod tests {
 
         assert!(!solid.is_sloped());
         let trans = solid.get_trans();
-        let rotated_z = trans.rotation * Vec3::Z;
-        assert!(
-            (rotated_z - Vec3::X).length() < 1e-5,
-            "instance rotation must send canonical +Z along the path, got {rotated_z:?}"
+        assert_eq!(
+            trans.rotation,
+            Quat::IDENTITY,
+            "path 方向不得进实例旋转：单位体沿 +Z、方向在 world_trans 里，再补一次就是重复计"
         );
         assert_eq!(unit(&solid).extrude_dir, DVec3::Z);
         let SweepPath3D::Line(line) = unit(&solid).path else {
