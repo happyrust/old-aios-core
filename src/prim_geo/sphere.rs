@@ -1,13 +1,11 @@
-use glam::Vec3;
-use hexasphere::shapes::IcoSphere;
-use std::f64::consts::PI;
-use std::sync::Arc;
 use crate::parsed_data::geo_params_data::PdmsGeoParam;
 use crate::prim_geo::basic::*;
 use crate::shape::pdms_shape::{BrepShapeTrait, PlantMesh, RsVec3, VerifiedShape};
-#[cfg(feature = "occ")]
-use opencascade::primitives::*;
+use glam::Vec3;
+use hexasphere::shapes::IcoSphere;
 use serde::{Deserialize, Serialize};
+use std::f64::consts::PI;
+use std::sync::Arc;
 
 use crate::NamedAttrMap;
 use crate::types::attmap::AttrMap;
@@ -54,14 +52,6 @@ impl BrepShapeTrait for Sphere {
     ///获得关键点
     fn key_points(&self) -> Vec<RsVec3> {
         vec![self.center.into()]
-    }
-
-    //OCC 的生成
-    #[cfg(feature = "occ")]
-    fn gen_occ_shape(&self) -> anyhow::Result<OccSharedShape> {
-        Ok(OccSharedShape::new(
-            Shape::sphere(self.radius as f64).build(),
-        ))
     }
 
     fn hash_unit_mesh_params(&self) -> u64 {

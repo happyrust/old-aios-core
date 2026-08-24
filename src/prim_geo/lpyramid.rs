@@ -1,15 +1,11 @@
-use std::collections::hash_map::DefaultHasher;
-use std::hash::{Hash, Hasher};
-use std::sync::Arc;
 use crate::parsed_data::geo_params_data::PdmsGeoParam;
-#[cfg(feature = "occ")]
-use crate::prim_geo::basic::OccSharedShape;
 use crate::shape::pdms_shape::{BrepShapeTrait, VerifiedShape};
 use bevy_ecs::prelude::*;
 use glam::{DVec3, Vec3};
-#[cfg(feature = "occ")]
-use opencascade::primitives::*;
 use serde::{Deserialize, Serialize};
+use std::collections::hash_map::DefaultHasher;
+use std::hash::{Hash, Hasher};
+use std::sync::Arc;
 #[derive(
     Component,
     Debug,
@@ -83,53 +79,6 @@ impl BrepShapeTrait for LPyramid {
     }
 
     //涵盖的情况，需要考虑，上边只有一条边，和退化成点的情况
-    #[cfg(feature = "occ")]
-    fn gen_occ_shape(&self) -> anyhow::Result<OccSharedShape> {
-        //todo 以防止出现有单个点的情况，暂时用这个模拟
-        let tx = (self.pbtp / 2.0).max(0.001) as f64;
-        let ty = (self.pctp / 2.0).max(0.001) as f64;
-        let bx = (self.pbbt / 2.0).max(0.001) as f64;
-        let by = (self.pcbt / 2.0).max(0.001) as f64;
-        //这里需要按照实际的变换方位来计算
-        let ox = self.pbof as f64 * self.pbax_dir.as_dvec3();
-        let oy = self.pcof as f64 * self.pcax_dir.as_dvec3();
-        // dbg!((ox, oy));
-        let offset_3d = ox + oy;
-        // let offset_3d = DVec3::new(offset.x as _, offset.y as _, 0.0);
-        // dbg!(offset_3d);
-        let h2 = 0.5 * (self.ptdi - self.pbdi) as f64;
-
-        let mut polys = vec![];
-        let mut verts = vec![];
-
-        let pts = vec![
-            DVec3::new(-tx, -ty, h2) + offset_3d,
-            DVec3::new(tx, -ty, h2) + offset_3d,
-            DVec3::new(tx, ty, h2) + offset_3d,
-            DVec3::new(-tx, ty, h2) + offset_3d,
-        ];
-        if tx + ty < f64::EPSILON {
-            verts.push(Vertex::new(DVec3::new(offset_3d.x, offset_3d.y, h2)));
-        } else {
-            polys.push(Wire::from_ordered_points(pts)?);
-        }
-
-        let pts = vec![
-            DVec3::new(-bx, -by, -h2),
-            DVec3::new(bx, -by, -h2),
-            DVec3::new(bx, by, -h2),
-            DVec3::new(-bx, by, -h2),
-        ];
-        if bx + by < f64::EPSILON {
-            verts.push(Vertex::new(DVec3::new(-offset_3d.x, -offset_3d.y, -h2)));
-        } else {
-            polys.push(Wire::from_ordered_points(pts)?);
-        }
-
-        Ok(OccSharedShape::new(
-            Solid::loft_with_points(polys.iter(), verts.iter())?.into_shape(),
-        ))
-    }
 
     fn hash_unit_mesh_params(&self) -> u64 {
         let bytes = bincode::serialize(self).unwrap();

@@ -21,8 +21,6 @@ use dashmap::DashMap;
 use derive_more::{Deref, DerefMut};
 use id_tree::NodeId;
 use itertools::Itertools;
-#[cfg(feature = "occ")]
-use opencascade::primitives::*;
 use parry3d::bounding_volume::Aabb;
 #[cfg(feature = "sea-orm")]
 use sea_orm::entity::prelude::*;

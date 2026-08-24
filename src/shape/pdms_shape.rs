@@ -1,3 +1,5 @@
+use crate::parsed_data::geo_params_data::PdmsGeoParam;
+use crate::tool::float_tool::f32_round_3;
 use anyhow::anyhow;
 use bevy_ecs::component::Component;
 #[cfg(feature = "render")]
@@ -12,6 +14,7 @@ use glam::{DMat4, DVec3};
 use glam::{Mat4, Vec3, Vec4};
 use itertools::Itertools;
 use parry3d::bounding_volume::Aabb;
+use parry3d::bounding_volume::BoundingVolume;
 use parry3d::math::{Point, Vector};
 use parry3d::shape::{TriMesh, TriMeshFlags};
 use serde::{Deserialize, Serialize};
@@ -23,15 +26,6 @@ use std::io::Read;
 use std::io::Write;
 use std::path::Path;
 use std::vec;
-use crate::parsed_data::geo_params_data::PdmsGeoParam;
-use crate::tool::float_tool::f32_round_3;
-use parry3d::bounding_volume::BoundingVolume;
-
-use crate::geometry::PlantGeoData;
-#[cfg(feature = "occ")]
-use crate::prim_geo::basic::OccSharedShape;
-#[cfg(feature = "occ")]
-use opencascade::primitives::{Compound, IntoShape, Shape};
 
 pub const TRIANGLE_TOL: f64 = 0.01;
 
@@ -83,33 +77,6 @@ impl PlantMesh {
 }
 
 impl PlantMesh {
-    ///生成occ mesh
-    #[cfg(feature = "occ")]
-    pub fn gen_occ_mesh(shape: &Shape, tol: f64) -> anyhow::Result<Self> {
-        let mut aabb = Aabb::new_invalid();
-        let mesh = shape.mesh_with_tolerance(tol)?;
-        let vertices = mesh
-            .vertices
-            .iter()
-            .map(|&x| x.as_vec3())
-            .collect::<Vec<_>>();
-        for point in vertices.iter() {
-            aabb.take_point(nalgebra::Point3::new(
-                point.x as f32,
-                point.y as f32,
-                point.z as f32,
-            ));
-        }
-        ///生成mesh
-        Ok(PlantMesh {
-            indices: mesh.indices.iter().map(|&x| x as u32).collect(),
-            vertices,
-            normals: mesh.normals.iter().map(|&x| x.as_vec3()).collect(),
-            wire_vertices: vec![],
-            aabb: Some(aabb),
-        })
-    }
-
     ///生成tri mesh
     #[inline]
     pub fn get_tri_mesh(&self, trans: Mat4) -> Option<TriMesh> {
@@ -376,38 +343,12 @@ pub trait BrepShapeTrait: Downcast + VerifiedShape + Debug + Send + Sync + DynCl
     ///限制参数大小，主要是对负实体的不合理进行限制
     fn apply_limit_by_size(&mut self, _limit_size: f32) {}
 
-    #[cfg(feature = "occ")]
-    fn gen_occ_shape(&self) -> anyhow::Result<OccSharedShape> {
-        return Err(anyhow!("不存在该occ shape"));
-    }
-
     //计算单元模型的参数hash值，也就是做成被可以复用的模型后的hash
     fn hash_unit_mesh_params(&self) -> u64 {
         0
     }
 
     fn gen_unit_shape(&self) -> Box<dyn BrepShapeTrait>;
-
-    ///生成对应的单位长度的模型，比如Dish，就是以R为1的情况生成模型
-    /// box
-    /// cylinder
-    /// sphere
-    #[cfg(not(target_arch = "wasm32"))]
-    fn gen_unit(&self, tol_ratio: Option<f32>) -> anyhow::Result<PlantGeoData> {
-        // self.gen_unit_shape().gen_plant_geo_data(tol_ratio)
-        todo!("not support")
-    }
-
-    #[cfg(not(target_arch = "wasm32"))]
-    fn gen_unit_occ_shape(&self, tol_ratio: Option<f32>) -> anyhow::Result<PlantGeoData> {
-        // self.gen_unit_shape().gen_plant_occ_geo(tol_ratio)
-        todo!("wasm32 not support")
-    }
-
-    #[cfg(target_arch = "wasm32")]
-    fn gen_unit(&self, tol_ratio: Option<f32>) -> anyhow::Result<PlantGeoData> {
-        todo!("wasm32 not support")
-    }
 
     ///获得缩放向量
     #[inline]
@@ -430,34 +371,6 @@ pub trait BrepShapeTrait: Downcast + VerifiedShape + Debug + Send + Sync + DynCl
         TRI_TOL
     }
 
-    #[cfg(feature = "occ")]
-    fn gen_plant_geo_data(&self, tol_ratio: Option<f32>) -> anyhow::Result<PlantGeoData> {
-        let geo_hash = self.hash_unit_mesh_params();
-
-        let shape = self.gen_occ_shape()?;
-
-        let mut aabb = Aabb::new_invalid();
-        for edge in shape.edges() {
-            for point in edge.approximation_segments() {
-                aabb.take_point(nalgebra::Point3::new(
-                    point.x as f32,
-                    point.y as f32,
-                    point.z as f32,
-                ));
-            }
-        }
-
-        let mesh =
-            shape.mesh_with_tolerance(self.tol() as f64 * tol_ratio.unwrap_or(2.0) as f64)?;
-
-        Ok(PlantGeoData {
-            geo_hash,
-            aabb: Some(aabb),
-        })
-
-        // Err(anyhow!("occ shape meshed failed"))
-    }
-
     ///生成mesh
     fn convert_to_geo_param(&self) -> Option<PdmsGeoParam> {
         None
@@ -478,4 +391,3 @@ pub trait BevyMathTrait {
     fn vec3(&self) -> Vec3;
     fn array(&self) -> [f32; 3];
 }
-

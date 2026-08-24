@@ -1,21 +1,15 @@
 #[cfg(all(feature = "gen_model", feature = "manifold"))]
 use crate::csg::manifold::*;
 use crate::parsed_data::geo_params_data::PdmsGeoParam;
+use crate::prim_geo::wire::*;
+use crate::shape::pdms_shape::*;
+use crate::tool::float_tool::{f32_round_3, hash_f32, hash_vec3};
 use anyhow::anyhow;
+use bevy_ecs::prelude::*;
 use glam::{DVec3, Vec2, Vec3};
 use serde::{Deserialize, Serialize};
 use std::collections::hash_map::DefaultHasher;
 use std::hash::{Hash, Hasher};
-#[cfg(feature = "occ")]
-use crate::prim_geo::basic::OccSharedShape;
-use crate::prim_geo::wire::*;
-use crate::shape::pdms_shape::*;
-use crate::tool::float_tool::{f32_round_3, hash_f32, hash_vec3};
-use bevy_ecs::prelude::*;
-#[cfg(feature = "occ")]
-use opencascade::primitives::*;
-#[cfg(feature = "occ")]
-use opencascade::workplane::Workplane;
 
 #[derive(
     Component,
@@ -59,37 +53,6 @@ impl BrepShapeTrait for Extrusion {
     fn apply_limit_by_size(&mut self, l: f32) {
         self.height = self.height.min(l);
         dbg!(&self.height);
-    }
-
-    #[cfg(feature = "occ")]
-    fn gen_occ_shape(&self) -> anyhow::Result<OccSharedShape> {
-        if self.verts.len() == 0 || self.verts[0].len() < 3 {
-            return Err(anyhow!("Extrusion params not valid."));
-        }
-        let face = if let CurveType::Spline(thick) = self.cur_type {
-            gen_occ_spline_wire(&self.verts, thick).map(|x| x.to_face())
-        } else {
-            gen_occ_wires(&self.verts)
-                .map(|x| Face::from_wires(&x))
-                .flatten()
-        };
-        match face {
-            Err(e) => {
-                #[cfg(feature = "debug_wire")]
-                {
-                    dbg!(&e);
-                    dbg!(self);
-                }
-                return Err(anyhow!("Extrusion gen_occ_shape error:{}", e));
-            }
-            Ok(f) => {
-                let shape = OccSharedShape::new(
-                    f.extrude(DVec3::new(0., 0.0, self.height as _))
-                        .into_shape(),
-                );
-                Ok(shape)
-            }
-        }
     }
 
     fn hash_unit_mesh_params(&self) -> u64 {
@@ -138,4 +101,3 @@ impl BrepShapeTrait for Extrusion {
         false
     }
 }
-

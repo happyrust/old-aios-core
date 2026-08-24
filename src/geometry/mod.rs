@@ -1,8 +1,6 @@
 use crate::parsed_data::CateAxisParam;
 use crate::parsed_data::geo_params_data::PdmsGeoParam;
 use crate::pdms_types::PdmsGenericType;
-#[cfg(feature = "occ")]
-use crate::prim_geo::basic::OccSharedShape;
 use crate::prim_geo::basic::{BOXI_GEO_HASH, TUBI_GEO_HASH};
 use crate::prim_geo::{SBox, SCylinder};
 use crate::shape::pdms_shape::{PlantMesh, RsVec3};
@@ -19,8 +17,6 @@ use bevy_transform::components::Transform;
 use dashmap::DashSet;
 use glam::{Vec3, bool, i32, u64};
 use nalgebra::Point3;
-#[cfg(feature = "occ")]
-use opencascade::primitives::{IntoShape, Shape};
 use parry3d::bounding_volume::Aabb;
 use serde_derive::{Deserialize, Serialize};
 use serde_with::serde_as;
@@ -640,17 +636,5 @@ impl EleInstGeo {
             serde_json::to_string(&param).unwrap()
         ));
         json_string
-    }
-
-    #[cfg(feature = "occ")]
-    pub fn gen_occ_shape(&self) -> anyhow::Result<OccSharedShape> {
-        let mut shape: OccSharedShape = self.geo_param.gen_occ_shape()?;
-        //scale 不能要，已经包含在OCC的真实参数里
-        let mut new_transform = self.transform;
-        new_transform.scale = Vec3::ONE;
-        shape
-            .as_mut()
-            .transform_by_mat(&new_transform.compute_matrix().as_dmat4());
-        Ok(shape)
     }
 }

@@ -1,27 +1,16 @@
-use bevy_ecs::prelude::*;
-use bevy_transform::prelude::Transform;
-use glam::{DVec2, DVec3, Quat, Vec3};
-use std::collections::hash_map::DefaultHasher;
-use std::hash::Hash;
-use std::hash::Hasher;
 use crate::NamedAttrMap;
 use crate::parsed_data::geo_params_data::PdmsGeoParam;
 use crate::prim_geo::helper::RotateInfo;
 use crate::shape::pdms_shape::{BrepShapeTrait, PlantMesh, RsVec3, TRI_TOL, VerifiedShape};
 use crate::tool::float_tool::hash_f32;
 use crate::types::attmap::AttrMap;
+use bevy_ecs::prelude::*;
+use bevy_transform::prelude::Transform;
+use glam::{DVec2, DVec3, Quat, Vec3};
 use serde::{Deserialize, Serialize};
-
-#[cfg(feature = "occ")]
-use crate::prim_geo::basic::OccSharedShape;
-#[cfg(feature = "occ")]
-use opencascade::angle::ToAngle;
-#[cfg(feature = "occ")]
-use opencascade::primitives::IntoShape;
-#[cfg(feature = "occ")]
-use opencascade::primitives::{Shape, Wire};
-#[cfg(feature = "occ")]
-use opencascade::workplane::Workplane;
+use std::collections::hash_map::DefaultHasher;
+use std::hash::Hash;
+use std::hash::Hasher;
 
 #[derive(
     Component,
@@ -166,21 +155,6 @@ impl VerifiedShape for CTorus {
 impl BrepShapeTrait for CTorus {
     fn clone_dyn(&self) -> Box<dyn BrepShapeTrait> {
         Box::new(self.clone())
-    }
-
-    #[cfg(feature = "occ")]
-    fn gen_occ_shape(&self) -> anyhow::Result<OccSharedShape> {
-        let r1 = (self.rins + self.rout) as f64 / 2.0;
-        let r2 = (self.rout - self.rins) as f64 / 2.0;
-
-        let center = DVec2::new(r1, 0.0);
-        let face = Workplane::xz()
-            .translated(center.extend(0.0))
-            .circle(0.0, 0.0, r2)
-            .unwrap()
-            .to_face();
-        let r = face.revolve(DVec3::ZERO, DVec3::Z, Some(self.angle.degrees()));
-        return Ok(OccSharedShape::new(r.into_shape()));
     }
 
     fn hash_unit_mesh_params(&self) -> u64 {

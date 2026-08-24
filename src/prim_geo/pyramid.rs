@@ -1,17 +1,13 @@
+use crate::NamedAttrMap;
 use crate::parsed_data::geo_params_data::PdmsGeoParam;
+use crate::shape::pdms_shape::{BrepShapeTrait, VerifiedShape};
 use crate::types::attmap::AttrMap;
+use bevy_ecs::prelude::*;
 use glam::{DVec3, Vec3};
 use serde::{Deserialize, Serialize};
 use std::collections::hash_map::DefaultHasher;
 use std::hash::{Hash, Hasher};
 use std::sync::Arc;
-use crate::NamedAttrMap;
-#[cfg(feature = "occ")]
-use crate::prim_geo::basic::OccSharedShape;
-use crate::shape::pdms_shape::{BrepShapeTrait, VerifiedShape};
-use bevy_ecs::prelude::*;
-#[cfg(feature = "occ")]
-use opencascade::primitives::*;
 
 #[derive(
     Component,
@@ -94,93 +90,6 @@ impl BrepShapeTrait for Pyramid {
     }
 
     //涵盖的情况，需要考虑，上边只有一条边，和退化成点的情况
-    #[cfg(feature = "occ")]
-    fn gen_occ_shape(&self) -> anyhow::Result<OccSharedShape> {
-        //todo 以防止出现有单个点的情况，暂时用这个模拟
-        let tx = (self.pbtp / 2.0).max(0.001) as f64;
-        let ty = (self.pctp / 2.0).max(0.001) as f64;
-        let bx = (self.pbbt / 2.0).max(0.001) as f64;
-        let by = (self.pcbt / 2.0).max(0.001) as f64;
-        let ox = 0.5 * self.pbof as f64;
-        let oy = 0.5 * self.pcof as f64;
-        let h2 = 0.5 * (self.ptdi - self.pbdi) as f64;
-
-        let mut polys = vec![];
-        let mut verts = vec![];
-
-        let mut pts = vec![
-            DVec3::new(-tx + ox, -ty + oy, h2),
-            DVec3::new(tx + ox, -ty + oy, h2),
-            DVec3::new(tx + ox, ty + oy, h2),
-            DVec3::new(-tx + ox, ty + oy, h2),
-        ];
-        // if tx * ty < f64::EPSILON {
-        //     verts.push(Vertex::new(DVec3::new(ox, oy, h2)));
-        // } else {
-        //     polys.push(Wire::from_ordered_points(pts)?);
-        // }
-        if tx + ty < 0.001 {
-            verts.push(Vertex::new(DVec3::new(ox, oy, h2)));
-        }
-        //todo use line to generate
-        // else if tx < 0.001 {
-        //     let mut pts = vec![
-        //         DVec3::new(tx + ox, -ty + oy, h2),
-        //         DVec3::new(tx + ox, ty + oy, h2),
-        //     ];
-        //     dbg!(&pts);
-        //     polys.push(Wire::from_ordered_points(pts)?);
-        // } else if ty < 0.001 {
-        //     let mut pts = vec![
-        //         DVec3::new(-tx + ox, ty + oy, h2),
-        //         DVec3::new(tx + ox, ty + oy, h2),
-        //     ];
-        //     dbg!(&pts);
-        //     polys.push(Wire::from_ordered_points(pts)?);
-        // }
-        else {
-            let mut pts = vec![
-                DVec3::new(-tx + ox, -ty + oy, h2),
-                DVec3::new(tx + ox, -ty + oy, h2),
-                DVec3::new(tx + ox, ty + oy, h2),
-                DVec3::new(-tx + ox, ty + oy, h2),
-            ];
-            polys.push(Wire::from_ordered_points(pts)?);
-        }
-
-        // dbg!(bx, by);
-        if bx + by < 0.001 {
-            verts.push(Vertex::new(DVec3::new(-ox, -oy, -h2)));
-        }
-        // else if bx < 0.001 {
-        //     let mut pts = vec![
-        //         DVec3::new(bx - ox, -by - oy, -h2),
-        //         DVec3::new(bx - ox, by - oy, -h2),
-        //     ];
-        //     dbg!(&pts);
-        //     polys.push(Wire::from_ordered_points(pts)?);
-        // } else if by < 0.001 {
-        //     let mut pts = vec![
-        //         DVec3::new(-bx - ox, by - oy, -h2),
-        //         DVec3::new(bx - ox, by - oy, -h2),
-        //     ];
-        //     dbg!(&pts);
-        //     polys.push(Wire::from_ordered_points(pts)?);
-        // }
-        else {
-            let mut pts = vec![
-                DVec3::new(-bx - ox, -by - oy, -h2),
-                DVec3::new(bx - ox, -by - oy, -h2),
-                DVec3::new(bx - ox, by - oy, -h2),
-                DVec3::new(-bx - ox, by - oy, -h2),
-            ];
-            polys.push(Wire::from_ordered_points(pts)?);
-        }
-
-        Ok(OccSharedShape::new(
-            Solid::loft_with_points(polys.iter(), verts.iter())?.into_shape(),
-        ))
-    }
 
     fn hash_unit_mesh_params(&self) -> u64 {
         let bytes = bincode::serialize(self).unwrap();

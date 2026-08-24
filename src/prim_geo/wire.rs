@@ -18,17 +18,13 @@ use clap::builder::TypedValueParser;
 use glam::{DVec2, DVec3, Quat, Vec3};
 use nalgebra::{ComplexField, DimAdd};
 use num_traits::signum;
+use parry2d::bounding_volume::Aabb;
+use parry2d::math::Point;
 use rust_ploop_processor::{PLoop, PLoopProcessor, Vertex as PLoopVertex};
 use serde_derive::{Deserialize, Serialize};
 use std::collections::{BTreeSet, HashMap, HashSet};
 use std::f32::consts::PI;
 use std::panic::AssertUnwindSafe;
-#[cfg(feature = "occ")]
-use crate::prim_geo::basic::OccSharedShape;
-#[cfg(feature = "occ")]
-use opencascade::primitives::{Edge, Face, Wire};
-use parry2d::bounding_volume::Aabb;
-use parry2d::math::Point;
 #[derive(
     Debug, Clone, Serialize, Deserialize, rkyv::Archive, rkyv::Deserialize, rkyv::Serialize,
 )]
@@ -47,51 +43,6 @@ pub fn cal_circus_center(pt0: Vec3, pt1: Vec3, pt2: Vec3) -> Vec3 {
     let u = (b2 * a2 - ab * b2) / (2.0 * det);
     let v = (-ab * a2 + b2 * a2) / (2.0 * det);
     pt0 + u * vec0 + v * vec1
-}
-
-#[cfg(feature = "occ")]
-///生成occ的wire
-pub fn gen_occ_spline_wire(loops: &Vec<Vec<Vec3>>, thick: f32) -> anyhow::Result<Wire> {
-    let verts = &loops[0];
-    if verts.len() != 3 {
-        return Err(anyhow!("SPINE number is not 3".to_string())); //先假定必须有三个
-    }
-
-    let pt0 = verts[0];
-    let transit = verts[1];
-    let pt1 = verts[2];
-
-    let vec0 = (pt0 - transit).normalize();
-    let vec1 = (pt1 - transit).normalize();
-    let origin = cal_circus_center(pt0, pt1, transit);
-    let _angle = PI - vec0.angle_between(vec1);
-    let mut rot_axis = Vec3::Z;
-    if (vec0.cross(vec1)).dot(Vec3::Z) > 0.0 {
-        rot_axis = -Vec3::Z;
-    }
-    let _radius = origin.distance(pt0);
-
-    let v0 = (pt0 - origin).normalize();
-    let v1 = (pt1 - origin).normalize();
-
-    let half_thick = thick / 2.0;
-    let p0 = (pt0 - v0 * half_thick).as_dvec3();
-    let p1 = (pt1 - v1 * half_thick).as_dvec3();
-    let p2 = (pt1 + v1 * half_thick).as_dvec3();
-    let p3 = (pt0 + v0 * half_thick).as_dvec3();
-
-    let t_v = (transit - origin).normalize();
-    let t0 = (transit - (half_thick * t_v)).as_dvec3();
-    let t1 = (transit + (half_thick * t_v)).as_dvec3();
-
-    let edges = vec![
-        Edge::arc(p0, p1, t0),
-        Edge::segment(p1, p2),
-        Edge::arc(p2, p3, t1),
-        Edge::segment(p3, p0),
-    ];
-
-    Ok(Wire::from_edges(&edges)?)
 }
 
 pub fn polyline_to_debug_json_str(pline: &Polyline) -> String {
@@ -161,93 +112,6 @@ fn add_fillet_spline(pline: &mut Polyline, pt: DVec3, d1: DVec3, d2: DVec3, r: f
 }
 
 #[test]
-fn test_gen_occ_circle() {
-    let pts = vec![
-        Vec3::ZERO,
-        Vec3::new(1.0, 0.0, 0.0),
-        Vec3::new(1.0, 1.0, 0.0),
-        Vec3::new(0.0, 1.0, 0.0),
-    ];
-    let fradius = vec![0.5; 4];
-    // //gen_occ_wires(&pts, &fradius);
-}
-
-#[test]
-fn test_gen_occ_reverse_circle() {
-    let mut pts = vec![
-        Vec3::ZERO,
-        Vec3::new(1.0, 0.0, 0.0),
-        Vec3::new(1.0, 1.0, 0.0),
-        Vec3::new(0.0, 1.0, 0.0),
-    ];
-    pts.reverse();
-    let mut fradius = vec![0.5; 4];
-    // //gen_occ_wires(&pts, &fradius);
-}
-
-#[test]
-fn test_gen_occ_circle_part() {
-    let pts = vec![
-        Vec3::ZERO,
-        Vec3::new(1.0, 0.0, 0.0),
-        Vec3::new(1.0, 1.0, 0.0),
-        Vec3::new(0.0, 1.0, 0.0),
-    ];
-    let fradius = vec![0.2; 4];
-    // //gen_occ_wires(&pts, &fradius);
-}
-
-#[test]
-fn test_gen_occ_cut_circle_big_corner_1() {
-    let pts = vec![
-        Vec3::ZERO,
-        Vec3::new(1.0, 0.0, 0.0),
-        Vec3::new(1.0, 1.0, 0.0),
-        Vec3::new(0.0, 1.0, 0.0),
-    ];
-    let fradius = vec![1.0f32, 0.0, 0.0, 0.0];
-    //gen_occ_wires(&pts, &fradius);
-}
-
-#[test]
-fn test_gen_occ_cut_circle_big_corner_2() {
-    let pts = vec![
-        Vec3::ZERO,
-        Vec3::new(1.0, 0.0, 0.0),
-        Vec3::new(1.0, 1.0, 0.0),
-        Vec3::new(0.0, 1.0, 0.0),
-    ];
-    let fradius = vec![1.5, 0.0, 0.0, 0.0];
-    //gen_occ_wires(&pts, &fradius);
-}
-
-#[test]
-fn test_gen_occ_concave() {
-    let pts = vec![
-        Vec3::ZERO,
-        Vec3::new(0.5, 0.5, 0.0),
-        Vec3::new(1.0, 0.0, 0.0),
-        Vec3::new(1.0, 1.0, 0.0),
-        Vec3::new(0.0, 1.0, 0.0),
-    ];
-    let fradius = vec![0.0, 0.25, 0.0, 0.0, 0.0];
-    //gen_occ_wires(&pts, &fradius);
-}
-
-#[test]
-fn test_gen_occ_concave_big() {
-    let pts = vec![
-        Vec3::ZERO,
-        Vec3::new(0.5, 0.5, 0.0),
-        Vec3::new(1.0, 0.0, 0.0),
-        Vec3::new(1.0, 1.0, 0.0),
-        Vec3::new(0.0, 1.0, 0.0),
-    ];
-    let fradius = vec![0.0, 1.5, 0.0, 0.0, 0.0];
-    //gen_occ_wires(&pts, &fradius);
-}
-
-#[test]
 fn test_complex_circe() {
     let parts = vec![
         pline_closed![
@@ -274,77 +138,6 @@ fn test_complex_circe() {
     } else {
         dbg!("cut failed");
     }
-}
-
-#[test]
-fn test_complex_half_circle() {
-    let pts = vec![
-        Vec3::new(233.5, 0.0, 0.0),
-        Vec3::new(222.0, 233.5, 0.0),
-        Vec3::new(-233.5, 233.5, 0.0),
-        Vec3::new(-233.5, 0.0, 0.0),
-    ];
-    let fradius = vec![0.0, 233.5, 233.5, 0.0];
-    //gen_occ_wires(&pts, &fradius);
-    // .expect("test_complex_half_circle failed");
-}
-
-#[test]
-fn test_complex_half_circle_1() {
-    let pts = vec![
-        Vec3::new(233.5, 0.0, 0.0),
-        Vec3::new(222.0, 233.5, 0.0),
-        Vec3::new(-233.5, 233.5, 0.0),
-        Vec3::new(-233.5, 0.0, 0.0),
-    ];
-    let fradius = vec![0.0, 150.0, 150.0, 0.0];
-    //gen_occ_wires(&pts, &fradius);
-    // .expect("test_complex_half_circle failed");
-}
-
-#[test]
-fn test_complex_1() {
-    let tmp_pts = vec![
-        [0.000, 0.000, 0.000],
-        [0.000, 15337.730, 0.000],
-        [-30432.971, 19187.180, 0.000],
-        [-34251.980, 4332.510, 0.000],
-        [-38584.891, 5526.540, 0.000],
-        [-36528.699, 13400.760, 0.000],
-        [-29829.340, 18021.330, 0.000],
-        [-11801.380, 30455.260, 0.000],
-        [631.700, 12426.700, 0.000],
-        [4267.570, 7155.040, 0.000],
-        [4486.860, 758.430, 0.000],
-    ];
-    let pts = tmp_pts
-        .iter()
-        .map(|x| Vec3::new(x[0], x[1], x[2]))
-        .collect::<Vec<_>>();
-    let fradius = vec![
-        0.0, 17400.0, 17400.0, 0.0, 0.0, 21900.0, 0.0, 21900.0, 0.0, 21900.0, 0.0,
-    ];
-    //gen_occ_wires(&pts, &fradius);
-    // .expect("test_complex_half_circle failed");
-}
-
-#[test]
-fn test_complex_2() {
-    let tmp_pts = vec![
-        [0.0, 0.0, 2765.0],
-        [-1903.0, 947.5800170898438, 2765.0],
-        [659.25, -2445.3798828125, 2765.0],
-        [-122.01000213623047, 1733.969970703125, 2765.0],
-        [-1285.550048828125, -2355.469970703125, 2765.0],
-        [146.63999938964844, -784.4299926757812, 2765.0],
-    ];
-    let pts = tmp_pts
-        .iter()
-        .map(|x| Vec3::new(x[0], x[1], x[2]))
-        .collect::<Vec<_>>();
-    let fradius = vec![0.0, 500.0, 500.0, 500.0, 500.0, 0.0];
-    //gen_occ_wires(&pts, &fradius);
-    // .expect("test_complex_half_circle failed");
 }
 
 #[inline]
@@ -1004,58 +797,6 @@ pub fn gen_polyline_original(pts: &Vec<Vec3>) -> anyhow::Result<Polyline> {
     Ok(final_polyline)
 }
 
-///生成occ的wire
-#[cfg(feature = "occ")]
-pub fn gen_occ_wires(loops: &Vec<Vec<Vec3>>) -> anyhow::Result<Vec<Wire>> {
-    if loops[0].len() < 3 {
-        return Err(anyhow!("第一个 wire 顶点数量不够，小于3。"));
-    }
-    let mut pos_poly = gen_polyline_original(&loops[0])?;
-    if pos_poly.vertex_data.len() < 3 {
-        return Err(anyhow!("pos_poly 顶点数量不够，小于3。"));
-    }
-
-    for pts in loops.iter().skip(1) {
-        let Ok(neg) = gen_polyline_original(pts) else {
-            continue;
-        };
-        let mut r = pos_poly.boolean(&neg, BooleanOp::Not);
-        if r.pos_plines.len() > 0 {
-            pos_poly = r.pos_plines.remove(0).pline;
-        }
-    }
-    #[cfg(feature = "debug_wire")]
-    println!(
-        "final occ polyline: {}",
-        polyline_to_debug_json_str(&pos_poly)
-    );
-
-    let mut wires = vec![];
-    let mut edges = vec![];
-    let mut seg_count = 0;
-    for (p, q) in pos_poly.iter_segments() {
-        if p.bulge.abs() < 0.001 {
-            edges.push(Edge::segment(
-                DVec3::new(p.x, p.y, 0.0),
-                DVec3::new(q.x, q.y, 0.0),
-            ));
-        } else {
-            let m = seg_midpoint(p, q);
-            edges.push(Edge::arc(
-                DVec3::new(p.x, p.y, 0.0),
-                DVec3::new(m.x, m.y, 0.0),
-                DVec3::new(q.x, q.y, 0.0),
-            ));
-        }
-        seg_count += 1;
-    }
-    if seg_count < 1 {
-        return Err(anyhow!("生成的线段数量小于1"));
-    }
-    wires.push(Wire::from_edges(&edges)?);
-    Ok(wires)
-}
-
 pub fn check_wire_ok(pts: &Vec<Vec3>, fradius_vec: &Vec<f32>) -> bool {
     let mut polyline = Polyline::new_closed();
     for i in 0..pts.len() {
@@ -1169,65 +910,6 @@ pub fn test_check_wire_25688_45293() {
 }
 
 #[test]
-pub fn test_check_wire_25688_45261() {
-    let data = vec![
-        [-23350, 0, 0],
-        [-22200, 23350, 23350],
-        [23350, 23350, 23350],
-        [23350, 0, 0],
-    ];
-    let pts: Vec<Vec3> = data
-        .iter()
-        .map(|x| Vec3::new(x[0] as f32, x[1] as f32, x[2] as f32))
-        .collect::<Vec<_>>();
-
-    // gen_occ_wires(&pts).unwrap();
-}
-
-#[test]
-pub fn test_check_wire_25688_72092() {
-    let data = vec![
-        [0.0, 0.0, 0.0],
-        [0.0, 8188.92, 0.0],
-        [-12620.42, 18627.24, 0.0],
-        [-20663.97, 17091.12, 0.0],
-        [-22737.08, 22684.93, 0.0],
-        [7196.01, 29736.53, 0.0],
-        [5884.46, -987.96, 0.0],
-    ];
-    let pts: Vec<Vec3> = data
-        .iter()
-        .map(|x| Vec3::new(x[0] as f32, x[1] as f32, x[2] as f32))
-        .collect::<Vec<_>>();
-    let fradius_vec = vec![0.0, 17400.0, 17400.0, 0.0, 0.0, 23300.0, 0.0];
-
-    // assert_eq!(check_wire_ok(&pts, &fradius_vec), true);
-    // gen_occ_wires(&pts, &fradius_vec).unwrap();
-}
-
-#[test]
-pub fn test_check_wire_17496_254047() {
-    let data = vec![
-        [31500.0, 79700.0, 0.0],
-        [31500.0, 84300.0, 0.0],
-        [62600.0, 84300.0, 0.0],
-        [62600.0, 42457.41015625, 0.0],
-        [62600.01171875, 42457.3984375, 0.0],
-        [42696.78125, 50942.25, 0.0],
-        [19471.44921875, 14430.48046875, 0.0],
-        [34918.640625, 37374.4296875, 0.0],
-        [31500.0, 41040.46875, 0.0],
-    ];
-    let pts: Vec<Vec3> = data
-        .iter()
-        .map(|x| Vec3::new(x[0] as f32, x[1] as f32, x[2] as f32))
-        .collect::<Vec<_>>();
-    let fradius_vec = vec![0.0, 0.0, 0.0, 0.0, 0.0, 25500.0, 25500.0, 0.0, 0.0];
-
-    // gen_occ_wires(&pts, &fradius_vec).unwrap();
-}
-
-#[test]
 pub fn test_gen_polyline() {
     // Simple rectangle with a fillet radius at the corner
     let pts = vec![
@@ -1308,21 +990,6 @@ pub fn test_gen_polyline_complex_shape() {
     ];
 
     let polyline = gen_polyline(&pts).expect("Failed to generate polyline");
-
-    #[cfg(feature = "occ")]
-    {
-        let occ_wires = gen_occ_wires(&vec![pts.clone()]).expect("Failed to generate OCC wires");
-
-        // Verify the generated OCC wire has the expected properties
-        assert_eq!(occ_wires.len(), 1, "Expected a single OCC wire");
-        let occ_wire = &occ_wires[0];
-
-        // Check that the OCC wire has at least some edges
-        // assert!(
-        //     occ_wire.edges().len() > 3,
-        //     "Expected a valid OCC wire with multiple edges"
-        // );
-    }
 
     // Verify the generated polyline has the expected properties
     // assert!(polyline.is_closed());

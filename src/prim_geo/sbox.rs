@@ -5,8 +5,6 @@ use crate::shape::pdms_shape::*;
 use crate::types::attmap::AttrMap;
 use bevy_ecs::prelude::*;
 use glam::Vec3;
-#[cfg(feature = "occ")]
-use opencascade::primitives::*;
 use serde::{Deserialize, Serialize};
 #[derive(
     Component,
@@ -49,11 +47,6 @@ impl BrepShapeTrait for SBox {
         self.size.x = self.size.x.min(l);
         self.size.y = self.size.y.min(l);
         self.size.z = self.size.z.min(l);
-    }
-
-    #[cfg(feature = "occ")]
-    fn gen_occ_shape(&self) -> anyhow::Result<OccSharedShape> {
-        Ok(BOX_SHAPE.clone())
     }
 
     fn hash_unit_mesh_params(&self) -> u64 {
