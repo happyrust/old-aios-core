@@ -1,4 +1,5 @@
 use std::default;
+use std::collections::HashMap;
 use std::f32::consts::{FRAC_PI_2, PI};
 
 use std::vec::Vec;
@@ -16,6 +17,22 @@ use bevy_transform::prelude::Transform;
 use dashmap::{DashMap, DashSet};
 use glam::{DMat4, DQuat, DVec3, Mat3, Quat, Vec3};
 use crate::prim_geo::{CateBrepShapeMap, SweepSolid};
+
+fn spine_segment_mitres(
+    path: &SweepPath3D,
+    source: (Option<DVec3>, Option<DVec3>),
+    local: (Option<DVec3>, Option<DVec3>),
+) -> (Option<DVec3>, Option<DVec3>) {
+    // Arc3D retains source-space center/start/axis and its instance frame is
+    // applied after tessellation, so its cut planes must remain source-space as
+    // well. Linear segments are trimmed before their placement and keep the
+    // historical spine-local plane convention.
+    if matches!(path, SweepPath3D::SpineArc(_)) {
+        source
+    } else {
+        local
+    }
+}
 
 
 
@@ -38,6 +55,7 @@ pub async fn create_profile_geos(refno: RefnoEnum,
     let mut drne = att.get_dvec3("DRNE").map(|x| inv_quat.mul_vec3(x.normalize()));
     // dbg!((refno, drns, drne));
     let parent_refno = att.get_owner();
+    let mut spine_mitres = HashMap::new();
     let mut spine_paths = if type_name == "GENSEC" || type_name == "WALL" {
         let children_refnos = crate::query_filter_children(refno, &["SPINE"]).await.unwrap_or_default();
         let mut paths = vec![];
@@ -48,6 +66,12 @@ pub async fn create_profile_geos(refno: RefnoEnum,
             }
             let spine_mat = crate::get_world_mat4(spine_refno, true).await?.unwrap_or_default();
             let inv_mat = spine_mat.inverse();
+            let source_drns = spine_att
+                .get_dvec3("DRNS")
+                .and_then(|normal| normal.try_normalize());
+            let source_drne = spine_att
+                .get_dvec3("DRNE")
+                .and_then(|normal| normal.try_normalize());
             //如果是墙，会有这两个属性
             drns = spine_att.get_dvec3("DRNS").map(|x| inv_mat.transform_vector3(x.normalize()));
             if drns.is_some()  && drns.unwrap().is_nan(){
@@ -69,8 +93,13 @@ pub async fn create_profile_geos(refno: RefnoEnum,
                 let att2 = &ch_atts[(i+1)%len];
                 let t2 = att2.get_type_str();
                 if t1 == "POINSP" && t2 == "POINSP" {
+                    let segment_refno = att1.get_refno().unwrap();
+                    spine_mitres.insert(
+                        segment_refno,
+                        ((source_drns, source_drne), (drns, drne)),
+                    );
                     paths.push(Spine3D {
-                        refno: att1.get_refno().unwrap(),
+                        refno: segment_refno,
                         pt0: att1.get_position().unwrap_or_default(),
                         pt1: att2.get_position().unwrap_or_default(),
                         curve_type: SpineCurveType::LINE,
@@ -89,8 +118,13 @@ pub async fn create_profile_geos(refno: RefnoEnum,
                         "THRU" => { SpineCurveType::THRU }
                         _ => { SpineCurveType::UNKNOWN }
                     };
+                    let segment_refno = att2.get_refno().unwrap();
+                    spine_mitres.insert(
+                        segment_refno,
+                        ((source_drns, source_drne), (drns, drne)),
+                    );
                     paths.push(Spine3D {
-                        refno: att2.get_refno().unwrap(),
+                        refno: segment_refno,
                         pt0,
                         pt1,
                         thru_pt: mid_pt,
@@ -156,12 +190,21 @@ pub async fn create_profile_geos(refno: RefnoEnum,
                 if let CateGeoParam::Profile(profile) = geom {
                     plax = profile.get_plax();
                     let (paths, mut transform) = spine.generate_paths();
+                    let (source_mitres, local_mitres) = spine_mitres
+                        .get(&spine.refno)
+                        .copied()
+                        .unwrap_or(((drns, drne), (drns, drne)));
                     let bangle = att.get_f32("BANG").unwrap_or_default();
                     for path in paths {
+                        let (segment_drns, segment_drne) = spine_segment_mitres(
+                            &path,
+                            source_mitres,
+                            local_mitres,
+                        );
                         let loft = SweepSolid {
                             profile: profile.clone(),
-                            drns,
-                            drne,
+                            drns: segment_drns,
+                            drne: segment_drne,
                             bangle,
                             plax,
                             extrude_dir,
@@ -188,4 +231,21 @@ pub async fn create_profile_geos(refno: RefnoEnum,
         }
     }
     Ok(true)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::prim_geo::spine::{Arc3D, Line3D};
+
+    #[test]
+    fn arc_mitre_planes_keep_the_same_source_frame_as_arc_geometry() {
+        let source = (Some(DVec3::X), Some(DVec3::NEG_X));
+        let local = (Some(DVec3::Z), Some(DVec3::NEG_Z));
+        let arc = SweepPath3D::SpineArc(Arc3D::default());
+        let line = SweepPath3D::Line(Line3D::default());
+
+        assert_eq!(spine_segment_mitres(&arc, source, local), source);
+        assert_eq!(spine_segment_mitres(&line, source, local), local);
+    }
 }
