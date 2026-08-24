@@ -1,19 +1,18 @@
+use crate::PdmsDatabaseInfo;
+use crate::cache::mgr::BytesTrait;
+use crate::pdms_types::*;
+use crate::tool::db_tool::db1_dehash;
+use crate::types::attmap::AttrMap;
+use crate::types::*;
+use dashmap::mapref::one::Ref;
+use dashmap::{DashMap, DashSet};
+use glam::{DVec3, Vec3};
+use itertools::Itertools;
+use lazy_static::lazy_static;
+use serde::{Deserialize, Serialize};
 use std::collections::{BTreeSet, HashMap};
 use std::fmt::{Debug, Formatter};
 use std::ops::Deref;
-use dashmap::{DashMap, DashSet};
-use dashmap::mapref::one::Ref;
-use crate::tool::db_tool::db1_dehash;
-use serde::{Deserialize, Serialize};
-use itertools::Itertools;
-use lazy_static::lazy_static;
-use crate::cache::mgr::BytesTrait;
-use crate::pdms_types::*;
-use crate::types::*;
-use glam::{DVec3, Vec3};
-use crate::PdmsDatabaseInfo;
-use crate::types::attmap::AttrMap;
-
 
 ///元件库信息
 #[derive(Serialize, Deserialize, Clone, Debug, Default)]
@@ -31,8 +30,7 @@ pub struct ScomInfo {
     pub plin_map: HashMap<String, PlinParam>,
 }
 
-impl BytesTrait for ScomInfo {
-}
+impl BytesTrait for ScomInfo {}
 
 #[derive(Serialize, Deserialize, Clone, Debug, Default)]
 pub struct PlinParam {
@@ -73,7 +71,7 @@ pub struct DatasetParamStr {
 pub struct GmParam {
     pub refno: RefnoEnum,
     /// SCYL  LSNO  SCTO  SDSH  SBOX
-    pub gm_type: String,  //SCYL  LSNO  SCTO  SDSH  SBOX  SANN  SPRO
+    pub gm_type: String, //SCYL  LSNO  SCTO  SDSH  SBOX  SANN  SPRO
 
     pub prad: String,
     pub pang: String,
@@ -135,10 +133,10 @@ pub enum DataOperation {
 impl From<i32> for DataOperation {
     fn from(v: i32) -> Self {
         match v {
-            0 => { Self::Modified }
-            1 => { Self::Added }
-            2 => { Self::Deleted }
-            _ => { Self::Invalid }
+            0 => Self::Modified,
+            1 => Self::Added,
+            2 => Self::Deleted,
+            _ => Self::Invalid,
         }
     }
 }
@@ -157,10 +155,10 @@ impl Into<i32> for DataOperation {
 impl DataOperation {
     pub fn into_str(self) -> String {
         match self {
-            DataOperation::Modified => { "修改".to_string() }
-            DataOperation::Added => { "新增".to_string() }
-            DataOperation::Deleted => { "删除".to_string() }
-            DataOperation::Invalid => { "未定义".to_string() }
+            DataOperation::Modified => "修改".to_string(),
+            DataOperation::Added => "新增".to_string(),
+            DataOperation::Deleted => "删除".to_string(),
+            DataOperation::Invalid => "未定义".to_string(),
         }
     }
 }
@@ -173,7 +171,6 @@ pub struct IncrementData {
     pub version: u32,
 }
 
-
 impl Debug for IncrementData {
     fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
         f.debug_struct("IncrementData")
@@ -184,7 +181,6 @@ impl Debug for IncrementData {
             .finish()
     }
 }
-
 
 lazy_static! {
     pub static ref ATTR_INFO_MAP: AttInfoMap = {
@@ -203,13 +199,12 @@ lazy_static! {
     };
 }
 
-
 #[derive(Default, Debug, Clone)]
 pub struct AttInfoMap {
     pub map: DashMap<i32, DashMap<i32, AttrInfo>>,
     pub type_att_names_map: DashMap<String, BTreeSet<String>>,
     pub type_implicit_att_names_map: DashMap<String, BTreeSet<String>>,
-    pub type_explicit_att_names_map: DashMap<String,BTreeSet<String>>,
+    pub type_explicit_att_names_map: DashMap<String, BTreeSet<String>>,
     pub att_name_type_map: DashMap<String, DbAttributeType>,
     pub has_cat_ref_types_set: DashSet<String>,
 }
@@ -228,17 +223,26 @@ impl AttInfoMap {
         for k in &self.map {
             let type_name = db1_dehash(*k.key() as u32);
             for v in k.value() {
-                self.type_att_names_map.entry(type_name.clone())
-                    .or_insert(BTreeSet::new()).insert(v.name.to_string());
+                self.type_att_names_map
+                    .entry(type_name.clone())
+                    .or_insert(BTreeSet::new())
+                    .insert(v.name.to_string());
                 if v.offset > 0 {
-                    self.type_implicit_att_names_map.entry(type_name.clone())
-                        .or_insert(BTreeSet::new()).insert(v.name.to_string());
+                    self.type_implicit_att_names_map
+                        .entry(type_name.clone())
+                        .or_insert(BTreeSet::new())
+                        .insert(v.name.to_string());
                 } else {
-                    if ["ID","REFNO","TYPE","OWNER"].contains(&v.name.as_str()) { continue; }
-                    self.type_explicit_att_names_map.entry(type_name.clone())
-                        .or_insert(BTreeSet::new()).insert(v.name.to_string());
+                    if ["ID", "REFNO", "TYPE", "OWNER"].contains(&v.name.as_str()) {
+                        continue;
+                    }
+                    self.type_explicit_att_names_map
+                        .entry(type_name.clone())
+                        .or_insert(BTreeSet::new())
+                        .insert(v.name.to_string());
                 }
-                self.att_name_type_map.insert(v.name.to_string(), v.att_type);
+                self.att_name_type_map
+                    .insert(v.name.to_string(), v.att_type);
                 if v.name.as_str() == "CATR" || v.name.as_str() == "SPRE" {
                     self.has_cat_ref_types_set.insert(type_name.clone());
                 }
@@ -255,21 +259,26 @@ impl AttInfoMap {
     /// 获取有catref的类型
     #[inline]
     pub fn get_has_cat_ref_type_names(&self) -> Vec<String> {
-        self.get_has_cat_ref_types_set().iter().map(|x| x.clone()).collect::<Vec<_>>()
+        self.get_has_cat_ref_types_set()
+            .iter()
+            .map(|x| x.clone())
+            .collect::<Vec<_>>()
     }
 
     #[inline]
     pub fn get_type_implicit_att_names(&self, type_name: &str) -> Vec<String> {
-        self.type_implicit_att_names_map.get(type_name).map(|v| {
-            v.value().iter().cloned().collect_vec()
-        }).unwrap_or_default()
+        self.type_implicit_att_names_map
+            .get(type_name)
+            .map(|v| v.value().iter().cloned().collect_vec())
+            .unwrap_or_default()
     }
 
     #[inline]
     pub fn get_type_explicit_att_names(&self, type_name: &str) -> Vec<String> {
-        self.type_explicit_att_names_map.get(type_name).map(|v| {
-            v.value().iter().cloned().collect_vec()
-        }).unwrap_or_default()
+        self.type_explicit_att_names_map
+            .get(type_name)
+            .map(|v| v.value().iter().cloned().collect_vec())
+            .unwrap_or_default()
     }
 
     #[inline]
@@ -284,21 +293,27 @@ impl AttInfoMap {
 
     #[inline]
     pub fn get_names_vec_of_type(&self, type_name: &str) -> Vec<String> {
-        self.type_att_names_map.get(type_name)
+        self.type_att_names_map
+            .get(type_name)
             .map(|x| x.value().iter().map(|x| x.clone()).sorted().collect_vec())
             .unwrap_or_default()
     }
 
     #[inline]
     pub fn exist_att_by_name(&self, type_name: &str, att_name: &str) -> bool {
-        self.type_att_names_map.get(type_name).map(|x| x.contains(att_name)).unwrap_or(false)
+        self.type_att_names_map
+            .get(type_name)
+            .map(|x| x.contains(att_name))
+            .unwrap_or(false)
     }
 
     /// 至少有一个 name 存在
     #[inline]
     pub fn exist_least_one_att_by_names(&self, type_name: &str, att_names: &Vec<&str>) -> bool {
-        self.type_att_names_map.get(type_name).map(|x|
-            att_names.iter().any(|v| x.value().contains(*v))).unwrap_or(false)
+        self.type_att_names_map
+            .get(type_name)
+            .map(|x| att_names.iter().any(|v| x.value().contains(*v)))
+            .unwrap_or(false)
     }
 
     #[inline]
@@ -306,4 +321,3 @@ impl AttInfoMap {
         self.att_name_type_map.get(att_name)
     }
 }
-

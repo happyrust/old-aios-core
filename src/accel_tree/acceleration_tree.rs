@@ -1,10 +1,10 @@
 use crate::geometry::PlantGeoData;
 use crate::shape::pdms_shape::PlantMesh;
-use crate::{types::*, GeomInstQuery, SUL_DB};
-use approx::{abs_diff_ne, assert_abs_diff_eq, AbsDiffEq};
+use crate::{GeomInstQuery, SUL_DB, types::*};
+use approx::{AbsDiffEq, abs_diff_ne, assert_abs_diff_eq};
 use bevy_ecs::prelude::Resource;
-use dashmap::mapref::one::Ref;
 use dashmap::DashMap;
+use dashmap::mapref::one::Ref;
 use glam::{Mat4, Vec3};
 use parry3d::bounding_volume::Aabb;
 use parry3d::query::{Ray, RayCast};
@@ -12,7 +12,7 @@ use parry3d::shape::TriMesh;
 use parry3d::shape::TriMeshFlags;
 use rstar::Envelope;
 use serde_derive::{Deserialize, Serialize};
-use serde_with::{serde_as, As, FromInto};
+use serde_with::{As, FromInto, serde_as};
 use smallvec::SmallVec;
 use std::cell::{Cell, RefCell};
 use std::collections::HashMap;
@@ -499,7 +499,11 @@ mod tests {
 
         assert_eq!(tree.size(), 1, "同一 refno 不允许在树里占两条");
         assert_eq!(stale.len(), 1);
-        assert_eq!(stale[0].aabb, bbox(1, 0.0, 10.0).aabb, "返回值必须是被替换的旧盒");
+        assert_eq!(
+            stale[0].aabb,
+            bbox(1, 0.0, 10.0).aabb,
+            "返回值必须是被替换的旧盒"
+        );
     }
 
     /// 旧值可能有多条（历史堆叠的残留），同步必须一次清干净。
@@ -540,10 +544,7 @@ mod tests {
 
     #[test]
     fn refno_index_keeps_legacy_bincode_compatible() {
-        let current = AccelerationTree::load(vec![
-            bbox(1, 0.0, 10.0),
-            bbox(2, 20.0, 30.0),
-        ]);
+        let current = AccelerationTree::load(vec![bbox(1, 0.0, 10.0), bbox(2, 20.0, 30.0)]);
         let legacy = LegacyAccelerationTree {
             tree: current.tree.clone(),
             ids: current.ids.clone(),

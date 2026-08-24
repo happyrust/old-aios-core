@@ -1,6 +1,6 @@
-use parry3d::bounding_volume::Aabb;
 use bevy_ecs::prelude::Component;
 use derive_more::{Deref, DerefMut};
+use parry3d::bounding_volume::Aabb;
 
 #[derive(Debug, PartialEq, Copy, Clone, Component, Deref, DerefMut)]
 pub struct ParryAabb(pub Aabb);

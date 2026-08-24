@@ -1,16 +1,16 @@
-use std::cmp::Ordering;
 use crate::pdms_types::RoomNodes;
 use crate::{RefU64, RefnoEnum, SUL_DB};
 use once_cell::sync::Lazy;
 use regex::Regex;
 use serde_derive::{Deserialize, Serialize};
-use serde_with::serde_as;
 use serde_with::DisplayFromStr;
+use serde_with::serde_as;
+use std::cmp::Ordering;
 use std::collections::{BTreeMap, BTreeSet, HashMap};
 use std::str::FromStr;
 use tokio::sync::RwLock;
 
-#[derive(Serialize, Deserialize, Default,Debug, Clone, Hash,Eq,PartialEq)]
+#[derive(Serialize, Deserialize, Default, Debug, Clone, Hash, Eq, PartialEq)]
 pub struct RoomInfo {
     pub name: String,
     pub refno: RefnoEnum,
@@ -77,11 +77,9 @@ pub async fn query_room_name_from_refnos(
     let owners = owner
         .into_iter()
         .map(|o| o.to_pe_key())
-        .collect::<Vec<String>>().join(",");
-    let sql = format!(
-        "select id,fn::room_code(id)[0] as room from [{}]",
-        owners
-    );
+        .collect::<Vec<String>>()
+        .join(",");
+    let sql = format!("select id,fn::room_code(id)[0] as room from [{}]", owners);
     let mut response = SUL_DB.query(sql).await?;
     let result: Vec<RoomNameQueryRequest> = response.take(0)?;
     let r = result
@@ -109,7 +107,10 @@ pub async fn query_equi_or_valv_belong_floors(
         .map(|refno| refno.to_pe_key())
         .collect::<Vec<_>>();
     let request = serde_json::to_string(&refnos)?;
-    let sql = format!("select id,(->nearest_relate.out.REFNO)[0] as floor,(->nearest_relate.dist)[0] as height from {}", request);
+    let sql = format!(
+        "select id,(->nearest_relate.out.REFNO)[0] as floor,(->nearest_relate.dist)[0] as height from {}",
+        request
+    );
     let mut response = SUL_DB.query(sql).await?;
     let result: Vec<BelongFloorResponse> = response.take(0)?;
     let r = result
@@ -128,7 +129,6 @@ pub async fn query_equi_or_valv_belong_floors(
         .collect::<HashMap<RefU64, (String, f32)>>();
     Ok(r)
 }
-
 
 #[tokio::test]
 async fn test_query_all_room_name() {

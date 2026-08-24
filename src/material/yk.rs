@@ -4,25 +4,25 @@ use super::query::create_table_sql;
 use super::query::save_material_value;
 #[cfg(feature = "sql")]
 use super::query::save_material_value_test;
-use crate::aios_db_mgr::aios_mgr::{self, AiosDBMgr};
+use crate::SUL_DB;
 use crate::aios_db_mgr::PdmsDataInterface;
+use crate::aios_db_mgr::aios_mgr::{self, AiosDBMgr};
 use crate::init_test_surreal;
 use crate::material::get_refnos_belong_major;
 use crate::material::gy::MaterialGyData;
 use crate::pe::SPdmsElement;
-use crate::SUL_DB;
 use crate::{
-    get_pe, insert_into_table_with_chunks, query_filter_ancestors, query_filter_deep_children,
-    RefU64,RefnoEnum
+    RefU64, RefnoEnum, get_pe, insert_into_table_with_chunks, query_filter_ancestors,
+    query_filter_deep_children,
 };
+use anyhow::anyhow;
 use serde_derive::{Deserialize, Serialize};
+use serde_json::Value;
 use std::collections::HashMap;
 use std::str::FromStr;
-use surrealdb::engine::any::Any;
 use surrealdb::Surreal;
+use surrealdb::engine::any::Any;
 use tokio::task::{self, JoinHandle};
-use anyhow::anyhow;
-use serde_json::Value;
 
 lazy_static::lazy_static!(
     static ref YK_DZCL_CHINESE_FIELDS: HashMap<&'static str, &'static str> = {
@@ -68,11 +68,7 @@ const FIELDS: [&str; 12] = [
     "公称直径",
 ];
 
-const YK_DZCL_DATA_FIELDS: [&str; 3] = [
-    "id",
-    "code",
-    "type"
-];
+const YK_DZCL_DATA_FIELDS: [&str; 3] = ["id", "code", "type"];
 
 const DZCL_TABLE: &'static str = "仪控专业_大宗材料";
 
@@ -80,19 +76,9 @@ const PIPE_TABLE: &'static str = "仪控专业_仪表管道";
 
 const EQUI_TABLE: &'static str = "仪控专业_设备清单";
 
-const PIPE_FIELDS: [&str; 4] = [
-    "参考号",
-    "传感器标识",
-    "对应根阀编号",
-    "房间号"
-];
+const PIPE_FIELDS: [&str; 4] = ["参考号", "传感器标识", "对应根阀编号", "房间号"];
 
-const PIPE_DATA_FIELDS: [&str; 4] = [
-    "id",
-    "name",
-    "pipe_name",
-    "room_code"
-];
+const PIPE_DATA_FIELDS: [&str; 4] = ["id", "name", "pipe_name", "room_code"];
 
 const EQUI_FIELDS: [&str; 5] = [
     "参考号",
@@ -102,23 +88,17 @@ const EQUI_FIELDS: [&str; 5] = [
     "设备相对楼板标高",
 ];
 
-const EQUI_DATA_FIELDS: [&str; 5] = [
-    "id",
-    "equi_name",
-    "room_code",
-    "pos",
-    "floor_height"
-];
+const EQUI_DATA_FIELDS: [&str; 5] = ["id", "equi_name", "room_code", "pos", "floor_height"];
 
 /// 仪控专业 大宗材料
-pub async fn save_yk_material_dzcl(
-    refno: RefU64,
-) -> Vec<JoinHandle<()>> {
+pub async fn save_yk_material_dzcl(refno: RefU64) -> Vec<JoinHandle<()>> {
     let db = SUL_DB.clone();
     let mut handles = Vec::new();
     match get_yk_dzcl_list(db.clone(), vec![refno]).await {
         Ok(r) => {
-            if r.is_empty() { return handles; }
+            if r.is_empty() {
+                return handles;
+            }
             let r_clone = r.clone();
             let task = task::spawn(async move {
                 match insert_into_table_with_chunks(&db, "material_inst_list", r_clone).await {
@@ -145,7 +125,9 @@ pub async fn save_yk_material_dzcl(
                                     &YK_DZCL_DATA_FIELDS,
                                     &YK_DZCL_CHINESE_FIELDS,
                                     r,
-                                ).await {
+                                )
+                                .await
+                                {
                                     Ok(_) => {}
                                     Err(e) => {
                                         dbg!(&e.to_string());
@@ -169,14 +151,14 @@ pub async fn save_yk_material_dzcl(
 }
 
 /// 仪控专业 仪表管道
-pub async fn save_yk_material_pipe(
-    refno: RefU64,
-) -> Vec<JoinHandle<()>> {
+pub async fn save_yk_material_pipe(refno: RefU64) -> Vec<JoinHandle<()>> {
     let db = SUL_DB.clone();
     let mut handles = Vec::new();
     match get_yk_inst_pipe(db.clone(), vec![refno]).await {
         Ok(r) => {
-            if r.is_empty() { return handles; }
+            if r.is_empty() {
+                return handles;
+            }
             let r_clone = r.clone();
             let task = task::spawn(async move {
                 match insert_into_table_with_chunks(&db, "material_inst_pipe", r_clone).await {
@@ -197,7 +179,15 @@ pub async fn save_yk_material_pipe(
                     match create_table_sql(&pool, &PIPE_TABLE, &PIPE_FIELDS).await {
                         Ok(_) => {
                             if !r.is_empty() {
-                                match save_material_value_test(&pool, &PIPE_TABLE, &PIPE_DATA_FIELDS, &YK_INST_CHINESE_FIELDS, r).await {
+                                match save_material_value_test(
+                                    &pool,
+                                    &PIPE_TABLE,
+                                    &PIPE_DATA_FIELDS,
+                                    &YK_INST_CHINESE_FIELDS,
+                                    r,
+                                )
+                                .await
+                                {
                                     Ok(_) => {}
                                     Err(e) => {
                                         dbg!(&e.to_string());
@@ -221,14 +211,14 @@ pub async fn save_yk_material_pipe(
 }
 
 /// 仪控专业 设备清单
-pub async fn save_yk_material_equi(
-    refno: RefU64,
-) -> Vec<JoinHandle<()>> {
+pub async fn save_yk_material_equi(refno: RefU64) -> Vec<JoinHandle<()>> {
     let db = SUL_DB.clone();
     let mut handles = Vec::new();
     match get_yk_equi_list_material(db.clone(), vec![refno]).await {
         Ok(r) => {
-            if r.is_empty() { return handles; }
+            if r.is_empty() {
+                return handles;
+            }
             let r_clone = r.clone();
             let task = task::spawn(async move {
                 match insert_into_table_with_chunks(&db, "material_inst_equi", r_clone).await {
@@ -249,8 +239,15 @@ pub async fn save_yk_material_equi(
                     match create_table_sql(&pool, &EQUI_TABLE, &EQUI_FIELDS).await {
                         Ok(_) => {
                             if !r.is_empty() {
-                                match save_material_value_test(&pool, &EQUI_TABLE,
-                                                               &EQUI_DATA_FIELDS, &YK_EQUI_CHINESE_FIELDS, r).await {
+                                match save_material_value_test(
+                                    &pool,
+                                    &EQUI_TABLE,
+                                    &EQUI_DATA_FIELDS,
+                                    &YK_EQUI_CHINESE_FIELDS,
+                                    r,
+                                )
+                                .await
+                                {
                                     Ok(_) => {}
                                     Err(e) => {
                                         dbg!(&e.to_string());
@@ -290,26 +287,15 @@ pub async fn get_yk_dzcl_list(
             };
         }
         // 查询bend的数据
-        let refnos = query_filter_deep_children(
-            refno.into(),
-            &[
-                "VALV",
-                "TEE",
-                "COUP",
-                "INST",
-                "BEND",
-            ],
-        )
-            .await?;
-        let refnos_str =
-            &refnos
-                .into_iter()
-                .map(|refno| refno.to_pe_key())
-                .collect::<Vec<String>>().join(",");
-        let sql = format!(
-            r#"return fn::yk_dzcl([{}])"#,
-            refnos_str
-        );
+        let refnos =
+            query_filter_deep_children(refno.into(), &["VALV", "TEE", "COUP", "INST", "BEND"])
+                .await?;
+        let refnos_str = &refnos
+            .into_iter()
+            .map(|refno| refno.to_pe_key())
+            .collect::<Vec<String>>()
+            .join(",");
+        let sql = format!(r#"return fn::yk_dzcl([{}])"#, refnos_str);
         let mut response = db.query(sql).await?;
         let mut result: Vec<HashMap<String, Value>> = response.take(0)?;
         data.append(&mut result);
@@ -359,16 +345,15 @@ pub async fn get_yk_inst_pipe(
         }
         // 查询 inst 的数据
         let refnos = query_filter_deep_children(refno.into(), &["INST"]).await?;
-        if refnos.is_empty() { return Ok(vec![]); }
-        let refnos_str =
-            &refnos
-                .into_iter()
-                .map(|refno| refno.to_pe_key())
-                .collect::<Vec<String>>().join(",");
-        let sql = format!(
-            r#"return fn::yk_ybgd([{}])"#,
-            refnos_str
-        );
+        if refnos.is_empty() {
+            return Ok(vec![]);
+        }
+        let refnos_str = &refnos
+            .into_iter()
+            .map(|refno| refno.to_pe_key())
+            .collect::<Vec<String>>()
+            .join(",");
+        let sql = format!(r#"return fn::yk_ybgd([{}])"#, refnos_str);
         let mut response = db.query(&sql).await?;
         match response.take(0) {
             Ok(mut result) => {
@@ -429,15 +414,12 @@ pub async fn get_yk_equi_list_material(
         }
         // 查询 EQUI 的数据
         let refnos = query_filter_deep_children(refno.into(), &["EQUI"]).await?;
-        let refnos_str =
-            &refnos
-                .into_iter()
-                .map(|refno| refno.to_pe_key())
-                .collect::<Vec<String>>().join(",");
-        let sql = format!(
-            r#"return fn::yk_equi([{}])"#,
-            refnos_str
-        );
+        let refnos_str = &refnos
+            .into_iter()
+            .map(|refno| refno.to_pe_key())
+            .collect::<Vec<String>>()
+            .join(",");
+        let sql = format!(r#"return fn::yk_equi([{}])"#, refnos_str);
         let mut response = db.query(&sql).await?;
         match response.take(0) {
             Ok(mut result) => {
@@ -457,22 +439,24 @@ struct BelongGyValvResponse {
     pub id: RefnoEnum,
     pub noun: String,
     pub name: String,
-    pub site:bool,
-    pub valv:Vec<String>,
+    pub site: bool,
+    pub valv: Vec<String>,
 }
 
 /// 查找仪控管段所属工艺管道的根阀
 pub async fn query_yk_bran_belong_gy_valv_name(
     mut bran: RefU64,
     aios_mgr: &AiosDBMgr,
-) -> anyhow::Result<Option<(String,String)>> {
+) -> anyhow::Result<Option<(String, String)>> {
     for _ in 0..5 {
         let mut sql = format!("select id,noun ,name?:'' as name, string::contains(fn::find_ancestor_type(id,'SITE').name?:'','PIPE') as site,
                     <-pe_owner.in.filter(|$x| $x.noun == 'VALV').name as valv from {}.refno.HREF", bran.to_pe_key());
         let mut resp = SUL_DB.query(&sql).await?;
         let r = resp.take::<Vec<BelongGyValvResponse>>(0)?;
         // 没有填href，返回的就是空
-        if r.is_empty() { return Ok(None); };
+        if r.is_empty() {
+            return Ok(None);
+        };
         let r = r[0].clone();
         // 判断 href 是 bran还是 tee等管件
         match r.noun.as_str() {
@@ -480,11 +464,11 @@ pub async fn query_yk_bran_belong_gy_valv_name(
             "BRAN" => {
                 if r.site {
                     if !r.valv.is_empty() {
-                        return Ok(Some((r.noun.clone(),r.valv[0].clone())));
+                        return Ok(Some((r.noun.clone(), r.valv[0].clone())));
                     } else {
                         // 如果是工艺管道，则返回PIPE的nmae，赋值到 仪表管编号
                         let owner_name = aios_mgr.get_name(r.id.refno()).await?;
-                        return Ok(Some(("PIPE".to_string(),owner_name)));
+                        return Ok(Some(("PIPE".to_string(), owner_name)));
                     }
                 } else {
                     // 不是工艺专业，则继续找href
@@ -495,7 +479,7 @@ pub async fn query_yk_bran_belong_gy_valv_name(
                 if r.site {
                     // 如果是NOZZ，则返回EQUI的nmae，赋值到 仪表管编号
                     let owner_name = aios_mgr.get_name(r.id.refno()).await?;
-                    return Ok(Some(("EQUI".to_string(),owner_name)));
+                    return Ok(Some(("EQUI".to_string(), owner_name)));
                 } else {
                     // 不是工艺专业，则继续找href
                     bran = r.id.refno();
@@ -585,4 +569,3 @@ async fn test_save_yk_material_dzcl() -> anyhow::Result<()> {
     futures::future::join_all(handles).await;
     Ok(())
 }
-

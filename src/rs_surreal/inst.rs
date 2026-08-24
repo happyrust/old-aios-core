@@ -1,7 +1,7 @@
 use crate::aios_db_mgr::aios_mgr::AiosDBMgr;
 use crate::basic::aabb::ParryAabb;
 use crate::pdms_types::PdmsGenericType;
-use crate::{get_inst_relate_keys, RefU64, RefnoEnum, SUL_DB};
+use crate::{RefU64, RefnoEnum, SUL_DB, get_inst_relate_keys};
 use bevy_transform::components::Transform;
 use chrono::{DateTime, Local, NaiveDateTime};
 use glam::{DVec3, Vec3};
@@ -310,7 +310,7 @@ pub async fn query_insts_by_zone(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::{init_test_surreal, RefnoEnum};
+    use crate::{RefnoEnum, init_test_surreal};
 
     #[tokio::test]
     async fn query_insts_uses_the_staged_read_database() -> anyhow::Result<()> {
@@ -319,11 +319,8 @@ mod tests {
         let context = super::super::staging::StagingReadContext::new(db, "staged_insts");
         let refnos = vec![RefnoEnum::from("4000000001/20")];
 
-        let rows = super::super::staging::with_staging_reads(
-            context,
-            query_insts(&refnos, true),
-        )
-        .await?;
+        let rows =
+            super::super::staging::with_staging_reads(context, query_insts(&refnos, true)).await?;
         assert!(rows.is_empty());
         Ok(())
     }

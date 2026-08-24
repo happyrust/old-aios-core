@@ -1,4 +1,4 @@
-use crate::{rs_surreal, tool::math_tool::quat_to_pdms_ori_xyz_str, RefU64};
+use crate::{RefU64, rs_surreal, tool::math_tool::quat_to_pdms_ori_xyz_str};
 
 use glam::Quat;
 use std::{sync::Arc, time::Instant};
@@ -26,9 +26,7 @@ async fn test_query_instance() -> anyhow::Result<()> {
     // dbg!(insts);
 
     let refno: RefnoEnum = "17496_497034".into();
-    let insts = rs_surreal::query_insts(&[refno], true)
-        .await
-        .unwrap();
+    let insts = rs_surreal::query_insts(&[refno], true).await.unwrap();
     // dbg!(insts);
     Ok(())
 }

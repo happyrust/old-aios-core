@@ -4,7 +4,7 @@ use crate::prim_geo::basic::OccSharedShape;
 use crate::prim_geo::wire::{gen_occ_wires, gen_polyline, polyline_to_debug_json_str};
 use crate::shape::pdms_shape::PlantMesh;
 use crate::{RefU64, SUL_DB};
-use cavalier_contours::polyline::{seg_midpoint, BooleanOp, PlineSource, PlineVertex, Polyline};
+use cavalier_contours::polyline::{BooleanOp, PlineSource, PlineVertex, Polyline, seg_midpoint};
 use cavalier_contours::{pline_closed, polyline};
 // use geo::{ConvexHull, LineString, Polygon};
 use glam::{DVec3, Vec3};

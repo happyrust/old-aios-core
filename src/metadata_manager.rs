@@ -1,7 +1,7 @@
+use crate::pdms_types::PdmsNodeTrait;
+use crate::types::*;
 use bevy_ecs::prelude::{Component, Resource};
 use serde_derive::{Deserialize, Serialize};
-use crate::pdms_types::{PdmsNodeTrait};
-use crate::types::*;
 
 /// 元数据管理各个字段在excel中的第几列
 #[derive(Debug, Default, Clone, Serialize, Deserialize)]
@@ -19,7 +19,7 @@ pub struct MetadataManagerTreeNodeExcelIndex {
     pub owned_name: Option<usize>,
 }
 
-#[derive(Debug, Default, Clone, Serialize, Deserialize,Component)]
+#[derive(Debug, Default, Clone, Serialize, Deserialize, Component)]
 pub struct MetadataManagerTreeNode {
     pub id: u64,
     pub owner: u64,
@@ -54,13 +54,15 @@ impl PdmsNodeTrait for MetadataManagerTreeNode {
     }
 
     #[inline]
-    fn get_type_name(&self) -> &str { "" }
+    fn get_type_name(&self) -> &str {
+        ""
+    }
 
     #[inline]
-    fn get_children_count(&self) -> usize { 1 }
+    fn get_children_count(&self) -> usize {
+        1
+    }
 }
-
-
 
 #[derive(Debug, Default, Clone, Serialize, Deserialize)]
 pub struct MetadataManagerTableDataExcelIndex {
@@ -99,14 +101,13 @@ pub struct MetadataManagerTableData {
     pub owned_name: String,
 }
 
-
 #[derive(Debug, Default, Clone, Serialize, Deserialize)]
 pub struct FileBytes {
     pub file_name: String,
     pub data: Vec<u8>,
 }
 
-#[derive(Resource,Debug, Default, Clone, Serialize, Deserialize)]
+#[derive(Resource, Debug, Default, Clone, Serialize, Deserialize)]
 pub struct ShowMetadataManagerTableData {
     pub id: u64,
     pub old_code: String,
@@ -130,7 +131,11 @@ pub struct ShowMetadataManagerTableData {
 impl ShowMetadataManagerTableData {
     pub fn init(table_data: MetadataManagerTableData) -> ShowMetadataManagerTableData {
         let mut data = ShowMetadataManagerTableData::default();
-        let group = if table_data.group.is_empty() { "[0]".to_string() } else { table_data.group };
+        let group = if table_data.group.is_empty() {
+            "[0]".to_string()
+        } else {
+            table_data.group
+        };
         data.id = table_data.id;
         data.old_code = table_data.code.clone();
         data.new_code = table_data.code;
@@ -138,14 +143,22 @@ impl ShowMetadataManagerTableData {
         data.chinese_name = table_data.chinese_name;
         data.english_define = table_data.english_define;
         data.chinese_define = table_data.chinese_define;
-        data.b_multi = if table_data.b_multi { "Y".to_string() } else { "N".to_string() };
+        data.b_multi = if table_data.b_multi {
+            "Y".to_string()
+        } else {
+            "N".to_string()
+        };
         data.data_type = table_data.data_type;
         data.data_constraint = table_data.data_constraint;
         data.unit = table_data.unit;
         data.desc = table_data.desc;
         data.group = group;
         data.change = false;
-        data.state = if table_data.state { "有效".to_string() } else { "无效".to_string() };
+        data.state = if table_data.state {
+            "有效".to_string()
+        } else {
+            "无效".to_string()
+        };
         data.owned_name = table_data.owned_name;
         data
     }

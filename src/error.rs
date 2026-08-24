@@ -1,4 +1,4 @@
-use log::{error, LevelFilter};
+use log::{LevelFilter, error};
 use simplelog::{CombinedLogger, Config, WriteLogger};
 use std::collections::HashMap;
 use std::fs::File;
@@ -18,7 +18,9 @@ pub enum HandleError {
         connection_name: String,
         connection_url: String,
     },
-    #[error("Failed to deserialize {struct_name} ;\n Error Message: {msg} ;\n SQL:{sql};  at {position}")]
+    #[error(
+        "Failed to deserialize {struct_name} ;\n Error Message: {msg} ;\n SQL:{sql};  at {position}"
+    )]
     DeserializeErr {
         struct_name: String,
         msg: String,
@@ -27,24 +29,13 @@ pub enum HandleError {
     },
     // 查询为空异常
     #[error("Query Null: {0} , at {position}")]
-    QueryNullErr {
-        sql: String,
-        position: String,
-    },
+    QueryNullErr { sql: String, position: String },
     #[error("Failed to save: {0} , at {position}")]
-    SaveDatabaseErr {
-        sql: String,
-        position: String,
-    },
+    SaveDatabaseErr { sql: String, position: String },
     #[error("Surreal Database Error: {msg}")]
-    SurrealError {
-        msg: String,
-    },
+    SurrealError { msg: String },
     #[error("Invalid Error: {0} \n , at {position}")]
-    InvalidErr {
-        msg: String,
-        position: String,
-    },
+    InvalidErr { msg: String, position: String },
 }
 
 impl HandleError {
@@ -60,18 +51,23 @@ pub fn init_query_error<E: ToString>(sql: &str, error_msg: E, position: &str) {
         msg: error_msg.to_string(),
         position: position.to_string(),
     }
-        .init_log();
+    .init_log();
 }
 
 /// 将 deserialize error注册到日志中
-pub fn init_deserialize_error<E: ToString>(struct_name: &str, error_msg: E, sql: &str, position: &str) {
+pub fn init_deserialize_error<E: ToString>(
+    struct_name: &str,
+    error_msg: E,
+    sql: &str,
+    position: &str,
+) {
     HandleError::DeserializeErr {
         struct_name: struct_name.to_string(),
         msg: error_msg.to_string(),
         sql: sql.to_string(),
         position: position.to_string(),
     }
-        .init_log();
+    .init_log();
 }
 
 /// 将查询为空注册到日志中
@@ -79,7 +75,8 @@ pub fn init_query_null_error(sql: &str, position: &str) {
     HandleError::QueryNullErr {
         sql: sql.to_string(),
         position: position.to_string(),
-    }.init_log()
+    }
+    .init_log()
 }
 
 /// 将保存到数据库中错误注册到日志中
@@ -87,7 +84,8 @@ pub fn init_save_database_error(sql: &str, position: &str) {
     HandleError::SaveDatabaseErr {
         sql: sql.to_string(),
         position: position.to_string(),
-    }.init_log()
+    }
+    .init_log()
 }
 
 fn create_error() -> Result<(), HandleError> {
@@ -111,7 +109,7 @@ fn test_err() -> anyhow::Result<()> {
         Config::default(),
         log_file,
     )])
-        .unwrap();
+    .unwrap();
 
     // create_error()?;
     let json = "[]";

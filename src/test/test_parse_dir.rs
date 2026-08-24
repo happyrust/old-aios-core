@@ -1,5 +1,5 @@
-use crate::tool::parse_to_dir;
 use crate::tool::direction_parse::parse_expr_to_dir;
+use crate::tool::parse_to_dir;
 #[test]
 fn test_parse_to_dir() {
     let inputs = vec![
@@ -18,7 +18,6 @@ fn test_parse_to_dir() {
         // }
     }
 }
-
 
 // #[test]
 // fn test_parse_dir() {

@@ -138,7 +138,7 @@ pub mod geo_params_data {
     use crate::prim_geo::snout::LSnout;
     use crate::prim_geo::sphere::Sphere;
     use crate::prim_geo::sweep_solid::SweepSolid;
-    use crate::prim_geo::{cylinder::*, LPyramid};
+    use crate::prim_geo::{LPyramid, cylinder::*};
     use crate::rvm_types::RvmShapeTypeData;
     use crate::shape::pdms_shape::{BrepShapeTrait, RsVec3, VerifiedShape};
     use anyhow::anyhow;
@@ -582,7 +582,6 @@ pub struct SannData {
     pub na_axis: Vec3,
 }
 
-
 ///一般的由顶点组成的截面信息
 #[derive(
     Clone,
@@ -644,7 +643,7 @@ impl SRectData {
             plax: self.plax,
             plin_pos: self.plin_pos,
             plin_axis: self.plin_axis,
-            na_axis: self.na_axis
+            na_axis: self.na_axis,
         }
     }
 }

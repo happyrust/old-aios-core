@@ -1,6 +1,6 @@
 use crate::ssc_setting::SiteData;
 use bevy_ecs::prelude::Resource;
-use serde::{Serialize, Deserialize};
+use serde::{Deserialize, Serialize};
 
 #[derive(Resource, Serialize, Deserialize, Debug, Default, Clone)]
 pub struct RoomSiteVec {
@@ -16,4 +16,3 @@ pub struct RoomSelectedSiteVec {
 pub struct FlagRoomSiteVec {
     pub data: Vec<SiteData>,
 }
-

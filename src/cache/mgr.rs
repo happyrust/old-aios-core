@@ -1,27 +1,20 @@
+use dashmap::DashMap;
 use std::io::{Read, Write};
 use std::sync::Arc;
-use dashmap::DashMap;
 
-use serde::de::DeserializeOwned;
-use serde::Serialize;
 use crate::types::*;
-
-
+use serde::Serialize;
+use serde::de::DeserializeOwned;
 
 use dashmap::mapref::one::Ref;
 use parry3d::bounding_volume::Aabb;
 
-
 #[cfg(not(target_arch = "wasm32"))]
-use redb::{
-    Database, ReadableTable, TableDefinition,
-};
-
+use redb::{Database, ReadableTable, TableDefinition};
 
 pub const CACHE_SLED_NAME: &'static str = "cache.rdb";
 #[cfg(not(target_arch = "wasm32"))]
 const TABLE: TableDefinition<u64, &[u8]> = TableDefinition::new("my_data");
-
 
 // pub trait BytesTrait: Sized + bincode::Decode + bincode::Encode {
 //     fn to_bytes(&self) -> anyhow::Result<Vec<u8>>{
@@ -36,17 +29,15 @@ const TABLE: TableDefinition<u64, &[u8]> = TableDefinition::new("my_data");
 // }
 
 pub trait BytesTrait: Sized + Serialize + DeserializeOwned {
-    fn to_bytes(&self) -> anyhow::Result<Vec<u8>>{
+    fn to_bytes(&self) -> anyhow::Result<Vec<u8>> {
         Ok(bincode::serialize(&self)?.into())
     }
-    fn from_bytes(bytes: &[u8]) -> anyhow::Result<Self>{
+    fn from_bytes(bytes: &[u8]) -> anyhow::Result<Self> {
         Ok(bincode::deserialize(bytes)?)
     }
 }
 
-impl BytesTrait for Aabb{
-
-}
+impl BytesTrait for Aabb {}
 
 //, rkyv::Archive
 #[cfg(not(target_arch = "wasm32"))]
@@ -60,8 +51,7 @@ pub struct CacheMgr<T: BytesTrait + Clone + Serialize + DeserializeOwned> {
 
 #[cfg(target_arch = "wasm32")]
 #[derive(Clone)]
-pub struct CacheMgr<
-    T: Clone + Serialize + DeserializeOwned> {
+pub struct CacheMgr<T: Clone + Serialize + DeserializeOwned> {
     name: String,
     map: DashMap<RefU64, T>,
     use_redb: bool,
@@ -80,17 +70,16 @@ impl<T: BytesTrait + Clone + Serialize + DeserializeOwned> CacheMgr<T> {
             map: Default::default(),
             use_redb: save_to_redb,
         }
-
     }
 
-    pub fn save_to_file(&self, path: &str) -> anyhow::Result<bool>{
+    pub fn save_to_file(&self, path: &str) -> anyhow::Result<bool> {
         // let bytes = bincode::serialize(&self.map)?;
         // let mut file = std::fs::File::create(path)?;
         // file.write_all(&bytes);
         Ok(true)
     }
 
-    pub fn load_map_from_file(&self, path: &str) -> anyhow::Result<bool>{
+    pub fn load_map_from_file(&self, path: &str) -> anyhow::Result<bool> {
         // let mut file = std::fs::File::open(path)?;
         // let mut bytes = vec![];
         // file.read_to_end(&mut bytes)?;
@@ -126,8 +115,9 @@ impl<T: BytesTrait + Clone + Serialize + DeserializeOwned> CacheMgr<T> {
                 if let Some(db) = &self.db {
                     let read_txn = db.begin_read().ok()?;
                     let table = read_txn.open_table(TABLE).ok()?;
-                    if let Ok(Some(bytes)) = table.get(&**k) &&
-                        let Ok(v) = T::from_bytes(bytes.value()){
+                    if let Ok(Some(bytes)) = table.get(&**k)
+                        && let Ok(v) = T::from_bytes(bytes.value())
+                    {
                         self.map.insert((*k).into(), v);
                     };
                 }
@@ -161,17 +151,14 @@ impl<T: BytesTrait + Clone + Serialize + DeserializeOwned> CacheMgr<T> {
     }
 }
 
-
 #[cfg(target_arch = "wasm32")]
-impl<T: Clone + Serialize + DeserializeOwned> CacheMgr<T>
-{
+impl<T: Clone + Serialize + DeserializeOwned> CacheMgr<T> {
     pub fn new(name: &str, save_to_redb: bool) -> Self {
         Self {
             name: name.to_string(),
             map: Default::default(),
             use_redb: save_to_redb,
         }
-
     }
 
     pub fn use_redb(&self) -> bool {

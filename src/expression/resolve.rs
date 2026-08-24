@@ -2,19 +2,22 @@ use std::collections::BTreeMap;
 use std::ops::Neg;
 use std::panic;
 
-use crate::parsed_data::{CateAxisParam, GmseParamData};
+use crate::expression::resolve_helper::{
+    parse_str_axis_to_vec3, resolve_axis, resolve_to_cate_geo_params,
+};
 use crate::parsed_data::geo_params_data::CateGeoParam;
+use crate::parsed_data::{CateAxisParam, GmseParamData};
 use crate::pdms_data::{AxisParam, GmParam, PlinParam, ScomInfo};
 use crate::pdms_types::RefU64;
 use crate::tool::db_tool::db1_dehash;
+use crate::{
+    CataContext, DDANGLE_STR, DDHEIGHT_STR, DDRADIUS_STR, RefnoEnum, eval_str_to_f32_or_default,
+};
 use dashmap::DashMap;
 use glam::{Vec2, Vec3};
 use once_cell::sync::Lazy;
-use crate::{eval_str_to_f32_or_default, CataContext, RefnoEnum, DDANGLE_STR, DDHEIGHT_STR, DDRADIUS_STR};
-use crate::expression::resolve_helper::{parse_str_axis_to_vec3, resolve_axis, resolve_to_cate_geo_params};
 
 pub static SCOM_INFO_MAP: Lazy<DashMap<RefnoEnum, ScomInfo>> = Lazy::new(DashMap::new);
-
 
 /// 求解axis的数值
 pub fn resolve_axis_params(
@@ -47,12 +50,16 @@ pub fn resolve_gms(
                 if g.gm_type == "SPRO" && g.verts.is_empty() {
                     return None;
                 }
-                let r = resolve_paragon_gm_params(des_refno, &g,
-                                                  jusl_param, na_plin_param, context, axis_param_map);
+                let r = resolve_paragon_gm_params(
+                    des_refno,
+                    &g,
+                    jusl_param,
+                    na_plin_param,
+                    context,
+                    axis_param_map,
+                );
                 return match r {
-                    Ok(v) => {
-                        Some(v)
-                    }
+                    Ok(v) => Some(v),
                     Err(e) => {
                         // dbg!(g);
                         println!("{}", e);
@@ -76,20 +83,17 @@ pub fn resolve_paragon_gm_params(
     axis_param_map: &BTreeMap<i32, CateAxisParam>,
 ) -> anyhow::Result<CateGeoParam> {
     match resolve_gmse_params(gm_param, jusl_param, na_plin_param, context, axis_param_map) {
-        Ok(gm_data) => {
-            panic::catch_unwind(|| {
-                resolve_to_cate_geo_params(&gm_data)
-                    .expect("resolve geom failed")
-            })
-                .map_err(|e| anyhow::anyhow!("元件库求解失败."))
-        }
-        Err(e) => {
-            Err(anyhow::anyhow!(format!("几何数据解析失败: {:?}, 原因：{}", des_refno.to_string(), &e)))
-        }
+        Ok(gm_data) => panic::catch_unwind(|| {
+            resolve_to_cate_geo_params(&gm_data).expect("resolve geom failed")
+        })
+        .map_err(|e| anyhow::anyhow!("元件库求解失败.")),
+        Err(e) => Err(anyhow::anyhow!(format!(
+            "几何数据解析失败: {:?}, 原因：{}",
+            des_refno.to_string(),
+            &e
+        ))),
     }
 }
-
-
 
 // impl CataExprContext {
 
@@ -178,7 +182,6 @@ pub fn resolve_paragon_gm_params(
 //     }
 // }
 
-
 pub fn resolve_gmse_params(
     gm: &GmParam,
     jusl_param: &Option<PlinParam>,
@@ -189,75 +192,96 @@ pub fn resolve_gmse_params(
     // if gm.refno == "13245_892211".into(){
     //     dbg!(gm);
     // }
-    let angle = context.get(DDANGLE_STR).unwrap().parse::<f32>().unwrap_or(0.0).to_radians();
-    let radius = context.get(DDRADIUS_STR).unwrap().parse::<f32>().unwrap_or(0.0);
-    let height = context.get(DDHEIGHT_STR).unwrap().parse::<f32>().unwrap_or(0.0);
+    let angle = context
+        .get(DDANGLE_STR)
+        .unwrap()
+        .parse::<f32>()
+        .unwrap_or(0.0)
+        .to_radians();
+    let radius = context
+        .get(DDRADIUS_STR)
+        .unwrap()
+        .parse::<f32>()
+        .unwrap_or(0.0);
+    let height = context
+        .get(DDHEIGHT_STR)
+        .unwrap()
+        .parse::<f32>()
+        .unwrap_or(0.0);
     // dbg!(&gm.diameters);
-    let diameters = gm.diameters
+    let diameters = gm
+        .diameters
         .iter()
-        .map(|exp| eval_str_to_f32_or_default(exp, context,  "DIST"))
+        .map(|exp| eval_str_to_f32_or_default(exp, context, "DIST"))
         .collect();
     // dbg!(&diameters);
 
-    let distances = gm.distances
+    let distances = gm
+        .distances
         .iter()
-        .map(|exp| eval_str_to_f32_or_default(exp, context,  "DIST"))
+        .map(|exp| eval_str_to_f32_or_default(exp, context, "DIST"))
         .collect();
 
-    let shears = gm.shears
+    let shears = gm
+        .shears
         .iter()
-        .map(|exp| eval_str_to_f32_or_default(exp, context,  "DIST"))
+        .map(|exp| eval_str_to_f32_or_default(exp, context, "DIST"))
         .collect();
 
     let mut verts = vec![];
     for vert in &gm.verts {
-        let f0 = eval_str_to_f32_or_default(&vert[0], context,  "DIST");
-        let f1 = eval_str_to_f32_or_default(&vert[1], context,  "DIST");
-        let f2 = eval_str_to_f32_or_default(&vert[2].as_str(), context,  "DIST");
+        let f0 = eval_str_to_f32_or_default(&vert[0], context, "DIST");
+        let f1 = eval_str_to_f32_or_default(&vert[1], context, "DIST");
+        let f2 = eval_str_to_f32_or_default(&vert[2].as_str(), context, "DIST");
         {
             verts.push(Vec3::new(f0, f1, f2));
         }
     }
 
+    let phei = eval_str_to_f32_or_default(&gm.phei, context, "DIST");
+    let offset = eval_str_to_f32_or_default(&gm.offset, context, "DIST");
 
-    let phei = eval_str_to_f32_or_default(&gm.phei, context,  "DIST");
-    let offset = eval_str_to_f32_or_default(&gm.offset, context,  "DIST");
+    let pang = eval_str_to_f32_or_default(&gm.pang, context, "DIST");
+    let pwid = eval_str_to_f32_or_default(&gm.pwid, context, "DIST");
+    let drad = eval_str_to_f32_or_default(&gm.drad, context, "DIST");
+    let dwid = eval_str_to_f32_or_default(&gm.dwid, context, "DIST");
 
-    let pang = eval_str_to_f32_or_default(&gm.pang, context,  "DIST");
-    let pwid = eval_str_to_f32_or_default(&gm.pwid, context,  "DIST");
-    let drad = eval_str_to_f32_or_default(&gm.drad, context,  "DIST");
-    let dwid = eval_str_to_f32_or_default(&gm.dwid, context,  "DIST");
-
-    let mut frads = gm.frads
+    let mut frads = gm
+        .frads
         .iter()
-        .map(|exp| eval_str_to_f32_or_default(exp, context,  "DIST"))
+        .map(|exp| eval_str_to_f32_or_default(exp, context, "DIST"))
         .collect();
 
-    let prad = eval_str_to_f32_or_default(&gm.prad, context,  "DIST");
+    let prad = eval_str_to_f32_or_default(&gm.prad, context, "DIST");
 
-    let dxy = gm.dxy
+    let dxy = gm
+        .dxy
         .iter()
         .try_fold::<_, _, anyhow::Result<_>>(vec![], |mut acc, exp| {
-            let f0 = eval_str_to_f32_or_default(&exp[0], context,  "DIST");
-            let f1 = eval_str_to_f32_or_default(&exp[1], context,  "DIST");
+            let f0 = eval_str_to_f32_or_default(&exp[0], context, "DIST");
+            let f1 = eval_str_to_f32_or_default(&exp[1], context, "DIST");
             acc.push(Vec2::new(f0, f1));
             Ok(acc)
         })?;
 
-    let lengths = gm.lengths
+    let lengths = gm
+        .lengths
         .iter()
-        .map(|exp| eval_str_to_f32_or_default(exp, context,  "DIST"))
+        .map(|exp| eval_str_to_f32_or_default(exp, context, "DIST"))
         .collect();
 
-    let xyz = gm.xyz
+    let xyz = gm
+        .xyz
         .iter()
-        .map(|exp| eval_str_to_f32_or_default(exp, context,  "DIST"))
+        .map(|exp| eval_str_to_f32_or_default(exp, context, "DIST"))
         .collect();
 
     let mut paxises: Vec<Option<CateAxisParam>> = Vec::new();
     for axis_str in gm.paxises.iter() {
         let mut axis = axis_str.trim();
-        if axis.is_empty() { continue; }
+        if axis.is_empty() {
+            continue;
+        }
         let p_axis = axis.starts_with("P");
         let p_axis_neg = axis.starts_with("-P");
         //针对P方向
@@ -298,25 +322,28 @@ pub fn resolve_gmse_params(
     if let Some(jusl) = jusl_param {
         // dbg!(jusl);
         //直接把 jusl_dxy加上
-        plin_pos = Vec2::new(eval_str_to_f32_or_default(&jusl.vxy[0], context,  "DIST"),
-                             eval_str_to_f32_or_default(&jusl.vxy[1], context,  "DIST"))
-            + Vec2::new(eval_str_to_f32_or_default(&jusl.dxy[0], context,  "DIST"),
-                        eval_str_to_f32_or_default(&jusl.dxy[1], context,  "DIST"));
+        plin_pos = Vec2::new(
+            eval_str_to_f32_or_default(&jusl.vxy[0], context, "DIST"),
+            eval_str_to_f32_or_default(&jusl.vxy[1], context, "DIST"),
+        ) + Vec2::new(
+            eval_str_to_f32_or_default(&jusl.dxy[0], context, "DIST"),
+            eval_str_to_f32_or_default(&jusl.dxy[1], context, "DIST"),
+        );
 
-        if let Ok(dir) =  parse_str_axis_to_vec3(&jusl.plax, context){
+        if let Ok(dir) = parse_str_axis_to_vec3(&jusl.plax, context) {
             plin_axis = Some(dir);
             // dbg!(plin_axis);
         }
     }
-    if let Some(na_plin) = na_plin_param{
-        if let Ok(dir) =  parse_str_axis_to_vec3(&na_plin.plax, context){
+    if let Some(na_plin) = na_plin_param {
+        if let Ok(dir) = parse_str_axis_to_vec3(&na_plin.plax, context) {
             na_axis = Some(dir);
             // dbg!(na_axis);
         }
     }
 
-    if let Some(p) = &gm.plax{
-        if let Ok(dir) =  parse_str_axis_to_vec3(p, context){
+    if let Some(p) = &gm.plax {
+        if let Ok(dir) = parse_str_axis_to_vec3(p, context) {
             plax = Some(dir);
             // dbg!(plax);
         }
@@ -349,7 +376,7 @@ pub fn resolve_gmse_params(
         tube_flag: gm.visible_flag,
         plin_axis,
         plax,
-        na_axis
+        na_axis,
     })
 }
 
@@ -358,7 +385,11 @@ pub fn resolve_axis_param(
     scom: &ScomInfo,
     context: &CataContext,
 ) -> CateAxisParam {
-    let key: String = axis_param.pconnect.replace("\n", "").replace(" ", "").into();
+    let key: String = axis_param
+        .pconnect
+        .replace("\n", "")
+        .replace(" ", "")
+        .into();
     let pconnect = if context.contains_key(&key) {
         let tmp = context.get(&key).unwrap().parse::<u32>().unwrap_or(0u32);
         db1_dehash(tmp)
@@ -366,9 +397,9 @@ pub fn resolve_axis_param(
         key.clone()
     };
     let number = axis_param.number;
-    let pbore = eval_str_to_f32_or_default(&axis_param.pbore, &context,  "DIST");
-    let pwidth = eval_str_to_f32_or_default(&axis_param.pwidth, &context,  "DIST");
-    let pheight = eval_str_to_f32_or_default(&axis_param.pheight, &context,  "DIST");
+    let pbore = eval_str_to_f32_or_default(&axis_param.pbore, &context, "DIST");
+    let pwidth = eval_str_to_f32_or_default(&axis_param.pwidth, &context, "DIST");
+    let pheight = eval_str_to_f32_or_default(&axis_param.pheight, &context, "DIST");
     let Ok((m_dir, ref_dir, pos)) = resolve_axis(axis_param, scom, context) else {
         return Default::default();
     };
@@ -377,7 +408,7 @@ pub fn resolve_axis_param(
     // dbg!(&axis_param);
     let result = match axis_param.type_name.as_str() {
         "PTAX" => {
-            let d = eval_str_to_f32_or_default(&axis_param.distance, &context,  "DIST");
+            let d = eval_str_to_f32_or_default(&axis_param.distance, &context, "DIST");
             CateAxisParam {
                 refno: axis_param.refno,
                 number,
@@ -392,10 +423,10 @@ pub fn resolve_axis_param(
             }
         }
         "PTCA" | "PTMI" => {
-            let x = eval_str_to_f32_or_default(&axis_param.x, &context,  "DIST");
-            let y = eval_str_to_f32_or_default(&axis_param.y, &context,  "DIST");
-            let z = eval_str_to_f32_or_default(&axis_param.z, &context,  "DIST");
-            if dir.is_none(){
+            let x = eval_str_to_f32_or_default(&axis_param.x, &context, "DIST");
+            let y = eval_str_to_f32_or_default(&axis_param.y, &context, "DIST");
+            let z = eval_str_to_f32_or_default(&axis_param.z, &context, "DIST");
+            if dir.is_none() {
                 // dbg!(&axis_param);
                 let dirs = axis_param.direction.split(" ").collect::<Vec<_>>();
                 if !dirs.is_empty() {
@@ -430,10 +461,14 @@ pub fn resolve_axis_param(
                 ..Default::default()
             };
             if let Some(pnt_index_str) = axis_param.pnt_index_str.as_ref() {
-                let paras = pnt_index_str.split_whitespace().map(|x| x.trim().to_owned()).collect::<Vec<_>>();
+                let paras = pnt_index_str
+                    .split_whitespace()
+                    .map(|x| x.trim().to_owned())
+                    .collect::<Vec<_>>();
                 if paras.len() == 2 {
                     let pnt_index = paras[1].parse::<i32>().unwrap_or(i32::MAX);
-                    if let Some(indx) = scom.axis_param_numbers.iter().position(|&x| x == pnt_index) {
+                    if let Some(indx) = scom.axis_param_numbers.iter().position(|&x| x == pnt_index)
+                    {
                         let axis = resolve_axis_param(&scom.axis_params[indx], scom, context);
                         cate_axis.refno = axis_param.refno;
                         cate_axis.pt = axis.pt;
@@ -442,7 +477,7 @@ pub fn resolve_axis_param(
             }
             return cate_axis;
         }
-        _ => CateAxisParam::default()
+        _ => CateAxisParam::default(),
     };
 
     // dbg!(&result);
@@ -493,7 +528,6 @@ pub fn parse_to_f64(input: &[u8]) -> f64 {
         0.0
     };
 }
-
 
 #[inline]
 pub fn convert_u32_to_noun(input: &[u8]) -> String {

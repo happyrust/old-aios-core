@@ -1,5 +1,5 @@
-use serde::{Serialize, Deserialize};
 use clap::Parser;
+use serde::{Deserialize, Serialize};
 
 #[derive(Debug, Default, Clone, Parser, Serialize, Deserialize)]
 pub struct DataCenterOptions {
@@ -7,4 +7,3 @@ pub struct DataCenterOptions {
     #[clap(long)]
     pub dq_support_sctn_types: Vec<String>,
 }
-

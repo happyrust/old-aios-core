@@ -2,11 +2,10 @@ use crate::attmap::AttrMap;
 use crate::consts::EXPR_ATT_SET;
 use crate::pdms_types::{AttrInfo, DifferenceValue};
 use crate::tool::db_tool::db1_hash;
-use crate::{pdms_types, NamedAttrMap, NamedAttrValue};
+use crate::{NamedAttrMap, NamedAttrValue, pdms_types};
 use dashmap::DashMap;
 use glam::i32;
 use serde_derive::{Deserialize, Serialize};
-
 
 /// 显式属性的结构体
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -22,7 +21,7 @@ pub struct ExplicitAttr {
 }
 
 /// 完整的属性映射结构体
-/// 
+///
 /// 包含两个主要字段:
 /// - `attmap`: 常规的命名属性映射
 /// - `explicit_attmap`: 显式的命名属性映射
@@ -37,28 +36,27 @@ pub struct WholeAttMap {
 }
 
 impl WholeAttMap {
-
-    pub fn att_map(&self) -> &NamedAttrMap{
+    pub fn att_map(&self) -> &NamedAttrMap {
         &self.attmap
     }
 
-    pub fn att_map_mut(&mut self) -> &mut NamedAttrMap{
+    pub fn att_map_mut(&mut self) -> &mut NamedAttrMap {
         &mut self.attmap
     }
 
-    pub fn explicit_attmap(&self) -> &NamedAttrMap{
+    pub fn explicit_attmap(&self) -> &NamedAttrMap {
         &self.explicit_attmap
     }
 
-    pub fn explicit_attmap_mut(&mut self) -> &mut NamedAttrMap{
+    pub fn explicit_attmap_mut(&mut self) -> &mut NamedAttrMap {
         &mut self.explicit_attmap
     }
 
-    pub fn uda_atts(&self) -> &Vec<ExplicitAttr>{
+    pub fn uda_atts(&self) -> &Vec<ExplicitAttr> {
         &self.uda_atts
     }
 
-    pub fn uda_atts_mut(&mut self) -> &mut Vec<ExplicitAttr>{
+    pub fn uda_atts_mut(&mut self) -> &mut Vec<ExplicitAttr> {
         &mut self.uda_atts
     }
 
@@ -85,8 +83,8 @@ impl WholeAttMap {
 
     #[inline]
     pub fn into_compress_bytes(&self) -> Vec<u8> {
-        use flate2::write::DeflateEncoder;
         use flate2::Compression;
+        use flate2::write::DeflateEncoder;
         use std::io::Write;
         let mut e = DeflateEncoder::new(Vec::new(), Compression::default());
         let _ = e.write_all(&self.into_bincode_bytes());
@@ -133,7 +131,10 @@ impl WholeAttMap {
     }
 }
 
-fn get_two_attr_map_difference(old_map: NamedAttrMap, mut new_map: NamedAttrMap) -> Vec<DifferenceValue> {
+fn get_two_attr_map_difference(
+    old_map: NamedAttrMap,
+    mut new_map: NamedAttrMap,
+) -> Vec<DifferenceValue> {
     let mut result = vec![];
     for (k, v) in old_map.map.into_iter() {
         let new_value = new_map.map.remove(&k);

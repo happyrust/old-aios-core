@@ -11,7 +11,9 @@ impl StackItem {
     pub fn get_f64(&self) -> anyhow::Result<f64> {
         match self {
             StackItem::Number(x) => Ok(x.to_owned()),
-            _ => Err(anyhow::anyhow!("unwrap called on non-numeric value".to_string())),
+            _ => Err(anyhow::anyhow!(
+                "unwrap called on non-numeric value".to_string()
+            )),
         }
     }
 }
@@ -42,23 +44,19 @@ impl Stack {
                         StackItem::Number(n)
                     } else {
                         StackItem::ErrNum(x.to_string())
-                    }
-                },
+                    };
+                }
             })
             .collect::<Vec<StackItem>>();
 
-        let has_error = stack.iter().find(|&x| {
-            match x {
-                StackItem::ErrNum(_) | StackItem::ErrOp(_) => { true}
-                _ => { false }
-            }
+        let has_error = stack.iter().find(|&x| match x {
+            StackItem::ErrNum(_) | StackItem::ErrOp(_) => true,
+            _ => false,
         });
         if has_error.is_some() {
             return Err(anyhow::anyhow!(format!("表达式: {}有错误", input)));
         }
-        Ok(Stack {
-            stack,
-        })
+        Ok(Stack { stack })
     }
 
     pub fn eval(&mut self) -> Option<f64> {

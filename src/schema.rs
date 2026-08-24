@@ -13,13 +13,13 @@ pub fn generate_basic_versioned_schema<T: Serialize + Default>() -> String {
         let datatype = match value {
             serde_json::Value::String(_) => "xsd:string",
             serde_json::Value::Bool(_) => "xsd:boolean",
-            serde_json::Value::Number(n) =>  {
+            serde_json::Value::Number(n) => {
                 if n.is_f64() {
                     "xsd:decimal"
-                }else{
+                } else {
                     "xsd:integer"
                 }
-            }, // 假设所有数字都是整数
+            } // 假设所有数字都是整数
             // 你可以根据需要增加更多的类型映射
             _ => "xsd:any",
         };
@@ -27,10 +27,7 @@ pub fn generate_basic_versioned_schema<T: Serialize + Default>() -> String {
             continue;
         }
 
-        terminusdb_schemas.push(format!(
-            r#""{}": "{}""#,
-            key, datatype
-        ));
+        terminusdb_schemas.push(format!(r#""{}": "{}""#, key, datatype));
     }
 
     terminusdb_schemas.join(",")

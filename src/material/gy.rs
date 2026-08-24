@@ -3,19 +3,22 @@ use super::query::create_table_sql;
 #[cfg(feature = "sql")]
 use super::query::{save_material_data_to_mysql, save_two_material_data_to_mysql};
 use crate::aios_db_mgr::aios_mgr::{self, AiosDBMgr};
-use crate::{get_pe, init_test_surreal, insert_into_table_with_chunks, query_filter_deep_children, RefU64, SUL_DB};
-use serde_derive::{Deserialize, Serialize};
-use std::collections::HashMap;
-use std::str::FromStr;
-use anyhow::anyhow;
-use lazy_static::lazy_static;
-use serde_json::Value;
-use surrealdb::engine::any::Any;
-use surrealdb::Surreal;
-use tokio::task::{self, JoinHandle};
-use crate::material::{define_core_material_surreal_funtions};
+use crate::material::define_core_material_surreal_funtions;
 #[cfg(feature = "sql")]
 use crate::material::query::save_material_value_test;
+use crate::{
+    RefU64, SUL_DB, get_pe, init_test_surreal, insert_into_table_with_chunks,
+    query_filter_deep_children,
+};
+use anyhow::anyhow;
+use lazy_static::lazy_static;
+use serde_derive::{Deserialize, Serialize};
+use serde_json::Value;
+use std::collections::HashMap;
+use std::str::FromStr;
+use surrealdb::Surreal;
+use surrealdb::engine::any::Any;
+use tokio::task::{self, JoinHandle};
 
 const DZ_COLUMNS: [&str; 17] = [
     "参考号",
@@ -38,7 +41,7 @@ const DZ_COLUMNS: [&str; 17] = [
 ];
 
 lazy_static! {
-    static ref DZ_CHINESE_FIELDS: HashMap<&'static str,&'static str> = {
+    static ref DZ_CHINESE_FIELDS: HashMap<&'static str, &'static str> = {
         let mut map = HashMap::new();
         map.entry("id").or_insert("参考号");
         map.entry("code").or_insert("编码");
@@ -47,8 +50,7 @@ lazy_static! {
         map.entry("length").or_insert("数量");
         map
     };
-
-    static ref EQUI_CHINESE_FIELDS: HashMap<&'static str,&'static str> = {
+    static ref EQUI_CHINESE_FIELDS: HashMap<&'static str, &'static str> = {
         let mut map = HashMap::new();
         map.entry("id").or_insert("参考号");
         map.entry("name").or_insert("设备位号");
@@ -58,8 +60,7 @@ lazy_static! {
         map.entry("nozz_cref").or_insert("相连管道编号");
         map
     };
-
-    static ref VALV_CHINESE_FIELDS: HashMap<&'static str,&'static str> = {
+    static ref VALV_CHINESE_FIELDS: HashMap<&'static str, &'static str> = {
         let mut map = HashMap::new();
         map.entry("id").or_insert("参考号");
         map.entry("valv_name").or_insert("阀门位号");
@@ -87,7 +88,7 @@ const EQ_FIELDS: [&'static str; 6] = [
 ];
 const EQ_TABLE: &'static str = "工艺布置专业_设备清单";
 
-const EQ_DATA_FIELDS: [&'static str;6] = [
+const EQ_DATA_FIELDS: [&'static str; 6] = [
     "id",
     "name",
     "room_code",
@@ -136,10 +137,11 @@ pub async fn save_gy_material_dzcl(refno: RefU64) -> Vec<JoinHandle<()>> {
             let task: JoinHandle<()> = task::spawn(async move {
                 if !r_clone.is_empty() {
                     let _ = insert_into_table_with_chunks(&db, "material_gy_list", r_clone).await;
-
                 }
                 if !tubi_r_clone.is_empty() {
-                    let _ = insert_into_table_with_chunks(&db, "material_gy_list_tubi", tubi_r_clone).await;
+                    let _ =
+                        insert_into_table_with_chunks(&db, "material_gy_list_tubi", tubi_r_clone)
+                            .await;
                 }
             });
             handles.push(task);
@@ -191,9 +193,7 @@ pub async fn save_gy_material_dzcl(refno: RefU64) -> Vec<JoinHandle<()>> {
 }
 
 /// 工艺专业 设备清单
-pub async fn save_gy_material_equi(
-    refno: RefU64,
-) -> Vec<JoinHandle<()>>{
+pub async fn save_gy_material_equi(refno: RefU64) -> Vec<JoinHandle<()>> {
     let mut handles = vec![];
     let db = SUL_DB.clone();
     match get_gy_equi_list(db.clone(), vec![refno]).await {
@@ -219,7 +219,11 @@ pub async fn save_gy_material_equi(
                         Ok(_) => {
                             if !r.is_empty() {
                                 match save_material_value_test(
-                                    &pool,&EQ_TABLE, &EQ_DATA_FIELDS, &EQUI_CHINESE_FIELDS, r,
+                                    &pool,
+                                    &EQ_TABLE,
+                                    &EQ_DATA_FIELDS,
+                                    &EQUI_CHINESE_FIELDS,
+                                    r,
                                 )
                                 .await
                                 {
@@ -246,9 +250,7 @@ pub async fn save_gy_material_equi(
 }
 
 /// 工艺专业 阀门清单
-pub async fn save_gy_material_valv(
-    refno: RefU64,
-)  -> Vec<JoinHandle<()>>{
+pub async fn save_gy_material_valv(refno: RefU64) -> Vec<JoinHandle<()>> {
     let db = SUL_DB.clone();
     let mut handles = vec![];
     match get_gy_valv_list(db.clone(), vec![refno]).await {
@@ -279,7 +281,6 @@ pub async fn save_gy_material_valv(
                                     &VALVE_DATA_FIELDS,
                                     &VALV_CHINESE_FIELDS,
                                     r,
-
                                 )
                                 .await
                                 {
@@ -454,7 +455,10 @@ impl MaterialGyEquiList {
 pub async fn get_gy_dzcl(
     db: Surreal<Any>,
     refnos: Vec<RefU64>,
-) -> anyhow::Result<(Vec<HashMap<String, serde_json::Value>>,Vec<HashMap<String, serde_json::Value>>)> {
+) -> anyhow::Result<(
+    Vec<HashMap<String, serde_json::Value>>,
+    Vec<HashMap<String, serde_json::Value>>,
+)> {
     let mut data = Vec::new();
     let mut tubi_data = Vec::new();
     for refno in refnos {
@@ -474,10 +478,7 @@ pub async fn get_gy_dzcl(
             .map(|refno| refno.to_pe_key())
             .collect::<Vec<String>>()
             .join(",");
-        let sql = format!(
-            r#"return fn::gy_bend([{}])"#,
-            refnos_str
-        );
+        let sql = format!(r#"return fn::gy_bend([{}])"#, refnos_str);
         let mut response = db.query(&sql).await?;
         match response.take::<Vec<HashMap<String, serde_json::Value>>>(0) {
             Ok(mut result) => {
@@ -495,12 +496,9 @@ pub async fn get_gy_dzcl(
             .map(|refno| refno.to_pe_key())
             .collect::<Vec<String>>()
             .join(",");
-        let sql = format!(
-            r#"return fn::gy_tubi([{}])"#,
-            refnos_str
-        );
+        let sql = format!(r#"return fn::gy_tubi([{}])"#, refnos_str);
         let mut response = db.query(&sql).await?;
-        match response.take::<Vec<HashMap<String,Value>>>(0) {
+        match response.take::<Vec<HashMap<String, Value>>>(0) {
             Ok(mut result) => {
                 tubi_data.append(&mut result);
             }
@@ -521,10 +519,7 @@ pub async fn get_gy_dzcl(
             .map(|refno| refno.to_pe_key())
             .collect::<Vec<String>>()
             .join(",");
-        let sql = format!(
-            r#"return fn::gy_part([{}])"#,
-            refnos_str
-        );
+        let sql = format!(r#"return fn::gy_part([{}])"#, refnos_str);
         let mut response = db.query(&sql).await?;
         match response.take::<Vec<HashMap<String, serde_json::Value>>>(0) {
             Ok(mut result) => {
@@ -543,7 +538,7 @@ pub async fn get_gy_dzcl(
 pub async fn get_gy_valv_list(
     db: Surreal<Any>,
     refnos: Vec<RefU64>,
-) -> anyhow::Result<Vec<HashMap<String,Value>>> {
+) -> anyhow::Result<Vec<HashMap<String, Value>>> {
     let mut data = Vec::new();
     for refno in refnos {
         let Some(pe) = get_pe(refno.into()).await? else {
@@ -562,10 +557,7 @@ pub async fn get_gy_valv_list(
             .map(|refno| refno.to_pe_key())
             .collect::<Vec<String>>()
             .join(",");
-        let sql = format!(
-            r#"return fn::gy_valve([{}])"#,
-            refnos_str
-        );
+        let sql = format!(r#"return fn::gy_valve([{}])"#, refnos_str);
         let mut response = db.query(&sql).await?;
         match response.take(0) {
             Ok(mut result) => {
@@ -584,7 +576,7 @@ pub async fn get_gy_valv_list(
 pub async fn get_gy_equi_list(
     db: Surreal<Any>,
     refnos: Vec<RefU64>,
-) -> anyhow::Result<Vec<HashMap<String,serde_json::Value>>> {
+) -> anyhow::Result<Vec<HashMap<String, serde_json::Value>>> {
     let mut data = Vec::new();
     for refno in refnos {
         let Some(pe) = get_pe(refno.into()).await? else {
@@ -603,10 +595,7 @@ pub async fn get_gy_equi_list(
             .map(|refno| refno.to_pe_key())
             .collect::<Vec<String>>()
             .join(",");
-        let sql = format!(
-            r#"return fn::gy_equip([{}])"#,
-            refnos_str
-        );
+        let sql = format!(r#"return fn::gy_equip([{}])"#, refnos_str);
         let mut response = db.query(&sql).await?;
         match response.take(0) {
             Ok(mut result) => {

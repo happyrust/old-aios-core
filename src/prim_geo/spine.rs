@@ -5,22 +5,40 @@ use serde::{Deserialize, Serialize};
 
 use std::f32::consts::PI;
 
-
-use bevy_transform::prelude::*;
-use crate::{RefU64, RefnoEnum};
 use crate::tool::float_tool::{f32_round_3, vec3_round_3};
+use crate::{RefU64, RefnoEnum};
+use bevy_transform::prelude::*;
 
-#[derive(Component, Default, Debug, Clone, Serialize, Deserialize, rkyv::Archive, rkyv::Deserialize, rkyv::Serialize,)]
+#[derive(
+    Component,
+    Default,
+    Debug,
+    Clone,
+    Serialize,
+    Deserialize,
+    rkyv::Archive,
+    rkyv::Deserialize,
+    rkyv::Serialize,
+)]
 pub enum SpineCurveType {
     #[default]
     UNKNOWN,
     CENT,
     THRU,
     LINE,
-
 }
 
-#[derive(Component, Debug, Default, Clone, Serialize, Deserialize, rkyv::Archive, rkyv::Deserialize, rkyv::Serialize,)]
+#[derive(
+    Component,
+    Debug,
+    Default,
+    Clone,
+    Serialize,
+    Deserialize,
+    rkyv::Archive,
+    rkyv::Deserialize,
+    rkyv::Serialize,
+)]
 pub struct Spine3D {
     pub refno: RefnoEnum,
     pub pt0: Vec3,
@@ -33,9 +51,7 @@ pub struct Spine3D {
     pub preferred_dir: Vec3,
 }
 
-
 impl Spine3D {
-
     //获取两端的方向，如果是直线段，就是直线的方向，如果是圆弧，就是切线的方向
     pub fn get_dir(&self, start_or_end: bool) -> Vec3 {
         match self.curve_type {
@@ -52,11 +68,7 @@ impl Spine3D {
                 let vec1 = self.pt1 - center;
                 let angle = (PI - vec0.angle_between(vec1)) * 2.0;
                 let axis = vec1.cross(vec0).normalize();
-                let dir = if start_or_end {
-                    vec0
-                } else {
-                    vec1
-                };
+                let dir = if start_or_end { vec0 } else { vec1 };
                 let rot = Quat::from_rotation_arc(Vec3::Z, axis);
                 rot.mul_vec3(dir)
             }
@@ -66,24 +78,25 @@ impl Spine3D {
                 let vec1 = self.pt1 - center;
                 let angle = (PI - vec0.angle_between(vec1)) * 2.0;
                 let axis = vec1.cross(vec0).normalize();
-                let dir = if start_or_end {
-                    vec0
-                } else {
-                    vec1
-                };
+                let dir = if start_or_end { vec0 } else { vec1 };
                 let rot = Quat::from_rotation_arc(Vec3::Z, axis);
                 rot.mul_vec3(dir)
             }
-            SpineCurveType::UNKNOWN => {
-                Vec3::Z
-            }
+            SpineCurveType::UNKNOWN => Vec3::Z,
         }
     }
 }
 
-
-
-#[derive(Component, Debug, Clone, Serialize, Deserialize, rkyv::Archive, rkyv::Deserialize, rkyv::Serialize,)]
+#[derive(
+    Component,
+    Debug,
+    Clone,
+    Serialize,
+    Deserialize,
+    rkyv::Archive,
+    rkyv::Deserialize,
+    rkyv::Serialize,
+)]
 pub enum SweepPath3D {
     Line(Line3D),
     SpineArc(Arc3D),
@@ -95,8 +108,8 @@ impl Default for SweepPath3D {
     }
 }
 
-impl SweepPath3D{
-    pub fn length(&self) -> f32{
+impl SweepPath3D {
+    pub fn length(&self) -> f32 {
         match self {
             Self::Line(line) => line.length(),
             Self::SpineArc(arc) => arc.angle.abs() * arc.radius,
@@ -104,9 +117,18 @@ impl SweepPath3D{
     }
 }
 
-
 /// `Arc3D` 结构的定义
-#[derive(Component, Debug, Clone, Default, Serialize, Deserialize, rkyv::Archive, rkyv::Deserialize, rkyv::Serialize,)]
+#[derive(
+    Component,
+    Debug,
+    Clone,
+    Default,
+    Serialize,
+    Deserialize,
+    rkyv::Archive,
+    rkyv::Deserialize,
+    rkyv::Serialize,
+)]
 pub struct Arc3D {
     /// 弧的中心点
     pub center: Vec3,
@@ -130,7 +152,16 @@ pub struct Arc3D {
     pub pref_axis: Vec3,
 }
 
-#[derive(Component, Debug, Clone, Serialize, Deserialize, rkyv::Archive, rkyv::Deserialize, rkyv::Serialize,)]
+#[derive(
+    Component,
+    Debug,
+    Clone,
+    Serialize,
+    Deserialize,
+    rkyv::Archive,
+    rkyv::Deserialize,
+    rkyv::Serialize,
+)]
 pub struct Line3D {
     pub start: Vec3,
     pub end: Vec3,
@@ -139,12 +170,12 @@ pub struct Line3D {
 
 impl Line3D {
     #[inline]
-    pub fn length(&self) -> f32{
+    pub fn length(&self) -> f32 {
         self.start.distance(self.end)
     }
 
     #[inline]
-    pub fn get_dir(&self, start_or_end: bool) -> Vec3{
+    pub fn get_dir(&self, start_or_end: bool) -> Vec3 {
         if start_or_end {
             (self.end - self.start).normalize_or_zero()
         } else {
@@ -158,7 +189,7 @@ impl Default for Line3D {
         Self {
             start: Default::default(),
             end: Vec3::Z,
-            is_spine: false
+            is_spine: false,
         }
     }
 }
@@ -192,11 +223,13 @@ impl Spine3D {
                 let d = x_axis.dot(Vec3::Z).abs();
                 let ref_axis = if approx::abs_diff_eq!(1.0, d) {
                     Vec3::Y
-                } else { Vec3::Z };
+                } else {
+                    Vec3::Z
+                };
                 let y_axis = ref_axis.cross(x_axis).normalize();
                 let z_axis = x_axis.cross(y_axis).normalize();
                 transform.rotation = Quat::from_mat3(&Mat3::from_cols(x_axis, y_axis, z_axis));
-                let arc = Arc3D{
+                let arc = Arc3D {
                     center: vec3_round_3(center),
                     radius: f32_round_3(center.distance(self.pt0)),
                     angle,
@@ -218,18 +251,19 @@ impl Spine3D {
                 let d = extru_dir.dot(pref_axis).abs();
                 let ref_axis = if approx::abs_diff_eq!(1.0, d) {
                     Vec3::Y
-                } else { pref_axis };
+                } else {
+                    pref_axis
+                };
 
                 let p_axis = ref_axis.cross(extru_dir).normalize();
                 let y_axis = extru_dir.cross(p_axis).normalize();
                 // dbg!((p_axis, y_axis, extru_dir));
-                transform.rotation = Quat::from_mat3(&glam::f32::Mat3::from_cols(
-                    p_axis, y_axis, extru_dir
-                ));
-                paths.push(SweepPath3D::Line(Line3D{
+                transform.rotation =
+                    Quat::from_mat3(&glam::f32::Mat3::from_cols(p_axis, y_axis, extru_dir));
+                paths.push(SweepPath3D::Line(Line3D {
                     start: Default::default(),
                     end: Vec3::Z * extru.length(),
-                    is_spine: true
+                    is_spine: true,
                 }));
             }
             SpineCurveType::UNKNOWN => {}

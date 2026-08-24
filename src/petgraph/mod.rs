@@ -1,6 +1,6 @@
+use crate::RefU64;
 use crate::noun_graph::NOUN_GRAPH;
 use crate::tool::db_tool::db1_dehash;
-use crate::RefU64;
 use petgraph::prelude::*;
 use serde_derive::{Deserialize, Serialize};
 use std::collections::{HashMap, HashSet, VecDeque};

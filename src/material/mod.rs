@@ -9,12 +9,12 @@ use crate::material::tx::save_tx_material_equi;
 use crate::material::yk::{save_yk_material_dzcl, save_yk_material_equi, save_yk_material_pipe};
 use crate::pdms_user::RefnoMajor;
 use crate::ssc_setting::{gen_pdms_major_table, query_all_site_with_major, set_pdms_major_code};
-use crate::{query_filter_ancestors, RefU64, SUL_DB};
+use crate::{RefU64, SUL_DB, query_filter_ancestors};
 use std::collections::HashMap;
 use std::io::Read;
 use strum::IntoEnumIterator;
-use surrealdb::engine::any::Any;
 use surrealdb::Surreal;
+use surrealdb::engine::any::Any;
 
 pub mod dq;
 pub mod gps;
@@ -193,76 +193,130 @@ pub async fn define_surreal_functions(db: Surreal<Any>) -> anyhow::Result<()> {
 }
 
 pub async fn define_material_surreal_funtions(db: Surreal<Any>) -> anyhow::Result<()> {
-    db.query(read_surreal_file("rs_surreal/material_list/common.surql")?.as_str()).await?;
-    db.query(read_surreal_file("rs_surreal/material_list/gy/gy_bend.surql")?.as_str()).await?;
-    db.query(read_surreal_file("rs_surreal/material_list/gy/gy_collect.surql")?.as_str()).await?;
-    db.query(read_surreal_file("rs_surreal/material_list/gy/gy_common.surql")?.as_str()).await?;
-    db.query(read_surreal_file("rs_surreal/material_list/gy/gy_equip.surql")?.as_str()).await?;
-    db.query(read_surreal_file("rs_surreal/material_list/gy/gy_part.surql")?.as_str()).await?;
-    db.query(read_surreal_file("rs_surreal/material_list/gy/gy_tubi.surql")?.as_str()).await?;
-    db.query(read_surreal_file("rs_surreal/material_list/gy/gy_valve.surql")?.as_str()).await?;
+    db.query(read_surreal_file("rs_surreal/material_list/common.surql")?.as_str())
+        .await?;
+    db.query(read_surreal_file("rs_surreal/material_list/gy/gy_bend.surql")?.as_str())
+        .await?;
+    db.query(read_surreal_file("rs_surreal/material_list/gy/gy_collect.surql")?.as_str())
+        .await?;
+    db.query(read_surreal_file("rs_surreal/material_list/gy/gy_common.surql")?.as_str())
+        .await?;
+    db.query(read_surreal_file("rs_surreal/material_list/gy/gy_equip.surql")?.as_str())
+        .await?;
+    db.query(read_surreal_file("rs_surreal/material_list/gy/gy_part.surql")?.as_str())
+        .await?;
+    db.query(read_surreal_file("rs_surreal/material_list/gy/gy_tubi.surql")?.as_str())
+        .await?;
+    db.query(read_surreal_file("rs_surreal/material_list/gy/gy_valve.surql")?.as_str())
+        .await?;
 
-    db.query(read_surreal_file("rs_surreal/material_list/dq/dq_bran.surql")?.as_str()).await?;
-    db.query(read_surreal_file("rs_surreal/material_list/dq/dq_common.surql")?.as_str()).await?;
-    db.query(read_surreal_file("rs_surreal/material_list/dq/dq_gensec.surql")?.as_str()).await?;
-    db.query(read_surreal_file("rs_surreal/material_list/dq/dq_stru.surql")?.as_str()).await?;
+    db.query(read_surreal_file("rs_surreal/material_list/dq/dq_bran.surql")?.as_str())
+        .await?;
+    db.query(read_surreal_file("rs_surreal/material_list/dq/dq_common.surql")?.as_str())
+        .await?;
+    db.query(read_surreal_file("rs_surreal/material_list/dq/dq_gensec.surql")?.as_str())
+        .await?;
+    db.query(read_surreal_file("rs_surreal/material_list/dq/dq_stru.surql")?.as_str())
+        .await?;
 
-    db.query(read_surreal_file("rs_surreal/material_list/eq/eq_common.surql")?.as_str()).await?;
-    db.query(read_surreal_file("rs_surreal/material_list/eq/eq_dz.surql")?.as_str()).await?;
+    db.query(read_surreal_file("rs_surreal/material_list/eq/eq_common.surql")?.as_str())
+        .await?;
+    db.query(read_surreal_file("rs_surreal/material_list/eq/eq_dz.surql")?.as_str())
+        .await?;
 
-    db.query(read_surreal_file("rs_surreal/material_list/gps/gps_bend.surql")?.as_str()).await?;
-    db.query(read_surreal_file("rs_surreal/material_list/gps/gps_elbo.surql")?.as_str()).await?;
-    db.query(read_surreal_file("rs_surreal/material_list/gps/gps_flan.surql")?.as_str()).await?;
-    db.query(read_surreal_file("rs_surreal/material_list/gps/gps_redu.surql")?.as_str()).await?;
-    db.query(read_surreal_file("rs_surreal/material_list/gps/gps_tee.surql")?.as_str()).await?;
-    db.query(read_surreal_file("rs_surreal/material_list/gps/gps_tubi.surql")?.as_str()).await?;
+    db.query(read_surreal_file("rs_surreal/material_list/gps/gps_bend.surql")?.as_str())
+        .await?;
+    db.query(read_surreal_file("rs_surreal/material_list/gps/gps_elbo.surql")?.as_str())
+        .await?;
+    db.query(read_surreal_file("rs_surreal/material_list/gps/gps_flan.surql")?.as_str())
+        .await?;
+    db.query(read_surreal_file("rs_surreal/material_list/gps/gps_redu.surql")?.as_str())
+        .await?;
+    db.query(read_surreal_file("rs_surreal/material_list/gps/gps_tee.surql")?.as_str())
+        .await?;
+    db.query(read_surreal_file("rs_surreal/material_list/gps/gps_tubi.surql")?.as_str())
+        .await?;
 
-    db.query(read_surreal_file("rs_surreal/material_list/nt/nt_common.surql")?.as_str()).await?;
-    db.query(read_surreal_file("rs_surreal/material_list/nt/nt_valve.surql")?.as_str()).await?;
+    db.query(read_surreal_file("rs_surreal/material_list/nt/nt_common.surql")?.as_str())
+        .await?;
+    db.query(read_surreal_file("rs_surreal/material_list/nt/nt_valve.surql")?.as_str())
+        .await?;
 
-    db.query(read_surreal_file("rs_surreal/material_list/tx/tx_sb.surql")?.as_str()).await?;
+    db.query(read_surreal_file("rs_surreal/material_list/tx/tx_sb.surql")?.as_str())
+        .await?;
 
-    db.query(read_surreal_file("rs_surreal/material_list/yk/yk_common.surql")?.as_str()).await?;
-    db.query(read_surreal_file("rs_surreal/material_list/yk/yk_dzcl.surql")?.as_str()).await?;
-    db.query(read_surreal_file("rs_surreal/material_list/yk/yk_equi.surql")?.as_str()).await?;
-    db.query(read_surreal_file("rs_surreal/material_list/yk/yk_ybgd.surql")?.as_str()).await?;
+    db.query(read_surreal_file("rs_surreal/material_list/yk/yk_common.surql")?.as_str())
+        .await?;
+    db.query(read_surreal_file("rs_surreal/material_list/yk/yk_dzcl.surql")?.as_str())
+        .await?;
+    db.query(read_surreal_file("rs_surreal/material_list/yk/yk_equi.surql")?.as_str())
+        .await?;
+    db.query(read_surreal_file("rs_surreal/material_list/yk/yk_ybgd.surql")?.as_str())
+        .await?;
     Ok(())
 }
 
 pub async fn define_core_material_surreal_funtions(db: Surreal<Any>) -> anyhow::Result<()> {
-    db.query(read_surreal_file("src/rs_surreal/material_list/common.surql")?.as_str()).await?;
-    db.query(read_surreal_file("src/rs_surreal/material_list/gy/gy_bend.surql")?.as_str()).await?;
-    db.query(read_surreal_file("src/rs_surreal/material_list/gy/gy_collect.surql")?.as_str()).await?;
-    db.query(read_surreal_file("src/rs_surreal/material_list/gy/gy_common.surql")?.as_str()).await?;
-    db.query(read_surreal_file("src/rs_surreal/material_list/gy/gy_equip.surql")?.as_str()).await?;
-    db.query(read_surreal_file("src/rs_surreal/material_list/gy/gy_part.surql")?.as_str()).await?;
-    db.query(read_surreal_file("src/rs_surreal/material_list/gy/gy_tubi.surql")?.as_str()).await?;
-    db.query(read_surreal_file("src/rs_surreal/material_list/gy/gy_valve.surql")?.as_str()).await?;
+    db.query(read_surreal_file("src/rs_surreal/material_list/common.surql")?.as_str())
+        .await?;
+    db.query(read_surreal_file("src/rs_surreal/material_list/gy/gy_bend.surql")?.as_str())
+        .await?;
+    db.query(read_surreal_file("src/rs_surreal/material_list/gy/gy_collect.surql")?.as_str())
+        .await?;
+    db.query(read_surreal_file("src/rs_surreal/material_list/gy/gy_common.surql")?.as_str())
+        .await?;
+    db.query(read_surreal_file("src/rs_surreal/material_list/gy/gy_equip.surql")?.as_str())
+        .await?;
+    db.query(read_surreal_file("src/rs_surreal/material_list/gy/gy_part.surql")?.as_str())
+        .await?;
+    db.query(read_surreal_file("src/rs_surreal/material_list/gy/gy_tubi.surql")?.as_str())
+        .await?;
+    db.query(read_surreal_file("src/rs_surreal/material_list/gy/gy_valve.surql")?.as_str())
+        .await?;
 
-    db.query(read_surreal_file("src/rs_surreal/material_list/dq/dq_bran.surql")?.as_str()).await?;
-    db.query(read_surreal_file("src/rs_surreal/material_list/dq/dq_common.surql")?.as_str()).await?;
-    db.query(read_surreal_file("src/rs_surreal/material_list/dq/dq_gensec.surql")?.as_str()).await?;
-    db.query(read_surreal_file("src/rs_surreal/material_list/dq/dq_stru.surql")?.as_str()).await?;
+    db.query(read_surreal_file("src/rs_surreal/material_list/dq/dq_bran.surql")?.as_str())
+        .await?;
+    db.query(read_surreal_file("src/rs_surreal/material_list/dq/dq_common.surql")?.as_str())
+        .await?;
+    db.query(read_surreal_file("src/rs_surreal/material_list/dq/dq_gensec.surql")?.as_str())
+        .await?;
+    db.query(read_surreal_file("src/rs_surreal/material_list/dq/dq_stru.surql")?.as_str())
+        .await?;
 
-    db.query(read_surreal_file("src/rs_surreal/material_list/eq/eq_common.surql")?.as_str()).await?;
-    db.query(read_surreal_file("src/rs_surreal/material_list/eq/eq_dz.surql")?.as_str()).await?;
+    db.query(read_surreal_file("src/rs_surreal/material_list/eq/eq_common.surql")?.as_str())
+        .await?;
+    db.query(read_surreal_file("src/rs_surreal/material_list/eq/eq_dz.surql")?.as_str())
+        .await?;
 
-    db.query(read_surreal_file("src/rs_surreal/material_list/gps/gps_bend.surql")?.as_str()).await?;
-    db.query(read_surreal_file("src/rs_surreal/material_list/gps/gps_elbo.surql")?.as_str()).await?;
-    db.query(read_surreal_file("src/rs_surreal/material_list/gps/gps_flan.surql")?.as_str()).await?;
-    db.query(read_surreal_file("src/rs_surreal/material_list/gps/gps_redu.surql")?.as_str()).await?;
-    db.query(read_surreal_file("src/rs_surreal/material_list/gps/gps_tee.surql")?.as_str()).await?;
-    db.query(read_surreal_file("src/rs_surreal/material_list/gps/gps_tubi.surql")?.as_str()).await?;
+    db.query(read_surreal_file("src/rs_surreal/material_list/gps/gps_bend.surql")?.as_str())
+        .await?;
+    db.query(read_surreal_file("src/rs_surreal/material_list/gps/gps_elbo.surql")?.as_str())
+        .await?;
+    db.query(read_surreal_file("src/rs_surreal/material_list/gps/gps_flan.surql")?.as_str())
+        .await?;
+    db.query(read_surreal_file("src/rs_surreal/material_list/gps/gps_redu.surql")?.as_str())
+        .await?;
+    db.query(read_surreal_file("src/rs_surreal/material_list/gps/gps_tee.surql")?.as_str())
+        .await?;
+    db.query(read_surreal_file("src/rs_surreal/material_list/gps/gps_tubi.surql")?.as_str())
+        .await?;
 
-    db.query(read_surreal_file("src/rs_surreal/material_list/nt/nt_common.surql")?.as_str()).await?;
-    db.query(read_surreal_file("src/rs_surreal/material_list/nt/nt_valve.surql")?.as_str()).await?;
+    db.query(read_surreal_file("src/rs_surreal/material_list/nt/nt_common.surql")?.as_str())
+        .await?;
+    db.query(read_surreal_file("src/rs_surreal/material_list/nt/nt_valve.surql")?.as_str())
+        .await?;
 
-    db.query(read_surreal_file("src/rs_surreal/material_list/tx/tx_sb.surql")?.as_str()).await?;
+    db.query(read_surreal_file("src/rs_surreal/material_list/tx/tx_sb.surql")?.as_str())
+        .await?;
 
-    db.query(read_surreal_file("src/rs_surreal/material_list/yk/yk_common.surql")?.as_str()).await?;
-    db.query(read_surreal_file("src/rs_surreal/material_list/yk/yk_dzcl.surql")?.as_str()).await?;
-    db.query(read_surreal_file("src/rs_surreal/material_list/yk/yk_equi.surql")?.as_str()).await?;
-    db.query(read_surreal_file("src/rs_surreal/material_list/yk/yk_ybgd.surql")?.as_str()).await?;
+    db.query(read_surreal_file("src/rs_surreal/material_list/yk/yk_common.surql")?.as_str())
+        .await?;
+    db.query(read_surreal_file("src/rs_surreal/material_list/yk/yk_dzcl.surql")?.as_str())
+        .await?;
+    db.query(read_surreal_file("src/rs_surreal/material_list/yk/yk_equi.surql")?.as_str())
+        .await?;
+    db.query(read_surreal_file("src/rs_surreal/material_list/yk/yk_ybgd.surql")?.as_str())
+        .await?;
     Ok(())
 }
 
@@ -286,14 +340,22 @@ pub async fn get_refnos_belong_major(
         };
         let zone = zone[0];
         // 找zone和site对应的专业
-        let sql = format!("select value fn::get_uda_value(id,'/CNPEdivco') from {};
-        select value fn::get_uda_value(owner,'/CNPEspco') from {};", zone.to_pe_key(), zone.to_pe_key());
+        let sql = format!(
+            "select value fn::get_uda_value(id,'/CNPEdivco') from {};
+        select value fn::get_uda_value(owner,'/CNPEspco') from {};",
+            zone.to_pe_key(),
+            zone.to_pe_key()
+        );
         let Ok(mut response) = SUL_DB.query(sql).await else {
             continue;
         };
         let zone_major: Vec<Option<String>> = response.take(0)?;
         let site_major: Vec<Option<String>> = response.take(1)?;
-        if zone_major.is_empty() || site_major.is_empty() || zone_major[0].is_none() || site_major[0].is_none() {
+        if zone_major.is_empty()
+            || site_major.is_empty()
+            || zone_major[0].is_none()
+            || site_major[0].is_none()
+        {
             continue;
         };
         let site_major = site_major[0].clone().unwrap();

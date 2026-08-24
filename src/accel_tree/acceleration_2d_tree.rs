@@ -1,6 +1,5 @@
-
-use parry3d::bounding_volume::Aabb;
 use crate::types::*;
+use parry3d::bounding_volume::Aabb;
 
 pub struct RStarBoundingBox2D {
     aabb: rstar::AABB<[f32; 2]>,
@@ -10,8 +9,10 @@ pub struct RStarBoundingBox2D {
 impl RStarBoundingBox2D {
     pub fn from_aabb(bounds: &Aabb, refno: RefU64) -> Self {
         Self {
-            aabb: rstar::AABB::from_corners([bounds.mins[0], bounds.mins[1]],
-                                            [bounds.maxs[0], bounds.maxs[1]]),
+            aabb: rstar::AABB::from_corners(
+                [bounds.mins[0], bounds.mins[1]],
+                [bounds.maxs[0], bounds.maxs[1]],
+            ),
             refno,
         }
     }
@@ -37,15 +38,14 @@ pub struct Acceleration2DTree {
 }
 
 impl Acceleration2DTree {
-
     #[inline]
-    pub fn is_empty(&self) -> bool{
+    pub fn is_empty(&self) -> bool {
         self.tree.size() == 0
     }
 
-    pub fn load(bounding_boxes: Vec<RStarBoundingBox2D>) -> Self{
-        Self{
-            tree: rstar::RTree::bulk_load(bounding_boxes)
+    pub fn load(bounding_boxes: Vec<RStarBoundingBox2D>) -> Self {
+        Self {
+            tree: rstar::RTree::bulk_load(bounding_boxes),
         }
     }
 
@@ -59,10 +59,15 @@ impl Acceleration2DTree {
     //         .map(|bb| bb.refno)
     // }
 
-    pub fn locate_intersecting_bounds<'a>(&'a self, bounds: &Aabb) -> impl Iterator<Item = RefU64> + 'a {
+    pub fn locate_intersecting_bounds<'a>(
+        &'a self,
+        bounds: &Aabb,
+    ) -> impl Iterator<Item = RefU64> + 'a {
         self.tree
-            .locate_in_envelope_intersecting(&rstar::AABB::from_corners([bounds.mins[0], bounds.mins[1]],
-                                                                        [bounds.maxs[0], bounds.maxs[1]]))
+            .locate_in_envelope_intersecting(&rstar::AABB::from_corners(
+                [bounds.mins[0], bounds.mins[1]],
+                [bounds.maxs[0], bounds.maxs[1]],
+            ))
             .map(|bb| bb.refno)
     }
 
@@ -82,4 +87,3 @@ impl Acceleration2DTree {
     //         .map(|bb| bb.entity)
     // }
 }
-

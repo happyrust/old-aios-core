@@ -1,19 +1,18 @@
-use std::alloc::{alloc, Layout};
+use std::alloc::{Layout, alloc};
 use std::{mem, panic};
 
+use crate::shape::pdms_shape::PlantMesh;
+use crate::tool::float_tool::*;
+use derive_more::{Deref, DerefMut};
 use glam::{DMat4, Mat4, Vec2, Vec3};
 use itertools::Itertools;
 use manifold_sys::bindings::*;
-use crate::shape::pdms_shape::PlantMesh;
-use derive_more::{Deref, DerefMut};
 use parry3d::bounding_volume::Aabb;
-use crate::tool::float_tool::*;
 
 #[derive(Clone, Deref, DerefMut)]
 pub struct ManifoldSimplePolygonRust {
     pub ptr: *mut ManifoldSimplePolygon,
 }
-
 
 impl ManifoldSimplePolygonRust {
     pub fn new() -> Self {
@@ -31,13 +30,10 @@ impl ManifoldSimplePolygonRust {
         unsafe {
             let mut polygon = Self::new();
             let ptr = manifold_simple_polygon(polygon.ptr as _, pts.as_ptr() as _, pts.len() as _);
-            Self {
-                ptr,
-            }
+            Self { ptr }
         }
     }
 }
-
 
 #[derive(Clone, Deref, DerefMut)]
 pub struct ManifoldCrossSectionRust {
@@ -60,7 +56,11 @@ impl ManifoldCrossSectionRust {
         unsafe {
             let mut cross_section = Self::new();
             let mut polygon = ManifoldSimplePolygonRust::from_points(pts);
-            manifold_cross_section_of_simple_polygon(cross_section.ptr as _, polygon.ptr as _, ManifoldFillRule_MANIFOLD_FILL_RULE_POSITIVE);
+            manifold_cross_section_of_simple_polygon(
+                cross_section.ptr as _,
+                polygon.ptr as _,
+                ManifoldFillRule_MANIFOLD_FILL_RULE_POSITIVE,
+            );
             cross_section
         }
     }
@@ -69,7 +69,15 @@ impl ManifoldCrossSectionRust {
     pub fn extrude(&mut self, height: f32, slices: u32) -> ManifoldRust {
         unsafe {
             let mut manifold = ManifoldRust::new();
-            manifold_extrude(manifold.ptr as _, self.ptr as _, height, slices as _, 0.0, 1.0, 1.0);
+            manifold_extrude(
+                manifold.ptr as _,
+                self.ptr as _,
+                height,
+                slices as _,
+                0.0,
+                1.0,
+                1.0,
+            );
 
             manifold
         }
@@ -85,7 +93,6 @@ impl ManifoldCrossSectionRust {
     }
 }
 
-
 #[derive(Clone, Deref, DerefMut)]
 pub struct ManifoldRust {
     pub ptr: *mut ManifoldManifold,
@@ -99,14 +106,16 @@ impl ManifoldRust {
             let sz = manifold_manifold_size();
             let layout = Layout::from_size_align(sz, 32).unwrap();
             let ptr = manifold_empty(alloc(layout) as _);
-            Self {
-                ptr,
-            }
+            Self { ptr }
         }
     }
 
     pub fn convert_to_manifold(plant_mesh: PlantMesh, mat4: DMat4, more_precsion: bool) -> Self {
-        Self::from_mesh(&ManifoldMeshRust::convert_to_manifold_mesh(plant_mesh, mat4, more_precsion))
+        Self::from_mesh(&ManifoldMeshRust::convert_to_manifold_mesh(
+            plant_mesh,
+            mat4,
+            more_precsion,
+        ))
     }
 
     pub fn from_mesh(m: &ManifoldMeshRust) -> Self {
@@ -126,17 +135,12 @@ impl ManifoldRust {
     }
 
     pub fn num_tri(&self) -> u32 {
-        unsafe {
-            manifold_num_tri(self.ptr) as _
-        }
+        unsafe { manifold_num_tri(self.ptr) as _ }
     }
 
     pub fn get_properties(&self) -> ManifoldProperties {
-        unsafe {
-            manifold_get_properties(self.ptr)
-        }
+        unsafe { manifold_get_properties(self.ptr) }
     }
-
 
     ///不支持subtact
     pub fn batch_boolean(batch: &[Self], op: ManifoldOpType) -> Self {
@@ -158,7 +162,9 @@ impl ManifoldRust {
     pub fn batch_boolean_subtract(&self, negs: &[Self]) -> Self {
         unsafe {
             let mut result = Self::new();
-            if negs.len() == 0 { return self.clone(); }
+            if negs.len() == 0 {
+                return self.clone();
+            }
             let mut src = self.clone();
             for (i, b) in negs.iter().enumerate() {
                 manifold_difference(result.ptr as _, src.ptr, b.ptr);
@@ -192,9 +198,7 @@ impl ManifoldMeshRust {
         }
     }
     pub fn num_tri(&self) -> u32 {
-        unsafe {
-            manifold_meshgl_num_tri(self.ptr) as _
-        }
+        unsafe { manifold_meshgl_num_tri(self.ptr) as _ }
     }
 
     pub fn merge(&mut self) -> bool {
@@ -204,7 +208,11 @@ impl ManifoldMeshRust {
         }
     }
 
-    pub fn convert_to_manifold_mesh(mut plant_mesh: PlantMesh, mat4: DMat4, ceil_or_trunc: bool) -> Self {
+    pub fn convert_to_manifold_mesh(
+        mut plant_mesh: PlantMesh,
+        mat4: DMat4,
+        ceil_or_trunc: bool,
+    ) -> Self {
         unsafe {
             let mesh = ManifoldMeshRust::new();
             let len = plant_mesh.vertices.len();
@@ -213,7 +221,7 @@ impl ManifoldMeshRust {
                 let pt = mat4.transform_point3(glam::DVec3::from(v));
                 if ceil_or_trunc {
                     verts.push((num_traits::signum(pt[0]) * f64_round_2(pt[0].abs())) as f32);
-                    verts.push( (num_traits::signum(pt[1]) * f64_round_2(pt[1].abs())) as f32);
+                    verts.push((num_traits::signum(pt[1]) * f64_round_2(pt[1].abs())) as f32);
                     verts.push((num_traits::signum(pt[2]) * f64_round_2(pt[2].abs())) as f32);
                 } else {
                     verts.push(f64_trunc_1(pt[0]) as _);
@@ -221,16 +229,20 @@ impl ManifoldMeshRust {
                     verts.push(f64_trunc_1(pt[2]) as _);
                 }
             }
-            manifold_meshgl(mesh.ptr as _,
-                            verts.as_ptr() as _, len, 3,
-                            plant_mesh.indices.as_ptr() as _, plant_mesh.indices.len() / 3);
+            manifold_meshgl(
+                mesh.ptr as _,
+                verts.as_ptr() as _,
+                len,
+                3,
+                plant_mesh.indices.as_ptr() as _,
+                plant_mesh.indices.len() / 3,
+            );
             mesh
         }
     }
 }
 //负实体的模型应该更大一些
 //正实体的模型更小一些
-
 
 // impl From<(&PlantMesh, &DMat4)> for ManifoldMeshRust {
 //     fn from(c: (&PlantMesh, &DMat4)) -> Self {
@@ -272,9 +284,14 @@ impl From<&PlantMesh> for ManifoldMeshRust {
                 verts.push(f32_round_1(v[1]));
                 verts.push(f32_round_1(v[2]));
             }
-            manifold_meshgl(mesh.ptr as _,
-                            verts.as_ptr() as _, m.vertices.len(), 3,
-                            m.indices.as_ptr() as _, m.indices.len() / 3);
+            manifold_meshgl(
+                mesh.ptr as _,
+                verts.as_ptr() as _,
+                m.vertices.len(),
+                3,
+                m.indices.as_ptr() as _,
+                m.indices.len() / 3,
+            );
             mesh
         }
     }
@@ -337,7 +354,11 @@ impl From<&ManifoldRust> for PlantMesh {
             manifold_meshgl_tri_verts(old_indices.as_mut_ptr() as _, mesh.ptr);
 
             for i in 0..vert_num {
-                vert.push([p[prop_num * i + 0], p[prop_num * i + 1], p[prop_num * i + 2]]);
+                vert.push([
+                    p[prop_num * i + 0],
+                    p[prop_num * i + 1],
+                    p[prop_num * i + 2],
+                ]);
             }
 
             let index_num = tri_num * 3;

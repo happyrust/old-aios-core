@@ -1,5 +1,5 @@
-use crate::{AttrMap, NamedAttrMap, RefU64};
 use crate::pdms_types::{EleTreeNode, PdmsElement};
+use crate::{AttrMap, NamedAttrMap, RefU64};
 use async_trait::async_trait;
 use bevy_transform::prelude::Transform;
 
@@ -25,7 +25,11 @@ pub trait PdmsDataInterface {
     async fn get_catr_attr(&self, refno: RefU64) -> anyhow::Result<Option<NamedAttrMap>>;
     /// 获取外键(一层)的属性
     /// catr这种就为两层
-    async fn get_foreign_attr(&self, refno: RefU64, foreign_type: &str) -> anyhow::Result<Option<NamedAttrMap>>;
+    async fn get_foreign_attr(
+        &self,
+        refno: RefU64,
+        foreign_type: &str,
+    ) -> anyhow::Result<Option<NamedAttrMap>>;
     /// 获取节点的name
     async fn get_name(&self, refno: RefU64) -> anyhow::Result<String>;
     /// 获得指定参考号的世界坐标系

@@ -1,13 +1,13 @@
-use deku::bitvec::*;
-use deku::prelude::*;
-use std::convert::{TryFrom, TryInto};
 use crate::RefU64;
-use deku::ctx::Endian;
-use serde::{Deserialize, Serialize};
-use derivative::Derivative;
 use chrono::DateTime;
-use chrono::Utc;
 use chrono::TimeZone;
+use chrono::Utc;
+use deku::bitvec::*;
+use deku::ctx::Endian;
+use deku::prelude::*;
+use derivative::Derivative;
+use serde::{Deserialize, Serialize};
+use std::convert::{TryFrom, TryInto};
 
 pub const PAGE_SIZE: usize = 0x800;
 
@@ -17,12 +17,11 @@ pub struct PdmsHeader {
     //开头两个未知
     pub unknown_0: [i32; 2],
     pub db_num: i32,
-    pub unknown_1: [i32; 5],  //然后是 00 00 00 01
+    pub unknown_1: [i32; 5], //然后是 00 00 00 01
     pub noun: i32,
     pub unknown_2: i32, // 0xFF FF FF FF
     pub latest_ses_pgno: u32,
     pub ext_no: u32,
-
 }
 
 #[derive(Clone, Debug, Default, Serialize, Deserialize)]
@@ -46,7 +45,7 @@ pub struct SessionPageData {
     pub last_ses_extno: i32,
     //会话id
     pub sesno: i32,
-    pub unknown_0: i32,  // 0xFF FF FF FF
+    pub unknown_0: i32, // 0xFF FF FF FF
 
     //最后一页的页号
     pub end_pgno: u32,
@@ -77,11 +76,10 @@ pub struct SessionPageData {
     pub comments_bytes: Vec<u8>,
 
     #[deku(count = "deku::rest.len()/8")]
-    pub remain_bytes: Vec<u8>,   //剩余的余量bytes
+    pub remain_bytes: Vec<u8>, //剩余的余量bytes
 }
 
 impl SessionPageData {
-
     #[inline]
     pub fn get_id(&self, project: &str, dbnum: i32) -> String {
         format!("{}_{}_{:0>6}", project, dbnum, self.sesno)
@@ -113,9 +111,17 @@ impl SessionPageData {
         let hours = self.hours % 24;
         let minutes = self.seconds / 60;
         let seconds = self.seconds % 60;
-        Utc.with_ymd_and_hms(year as i32, month as u32, days, hours as u32, minutes, seconds).latest().unwrap()
+        Utc.with_ymd_and_hms(
+            year as i32,
+            month as u32,
+            days,
+            hours as u32,
+            minutes,
+            seconds,
+        )
+        .latest()
+        .unwrap()
     }
-
 
     // #[inline]
     // pub fn get_computer_name(&self) -> String {
@@ -147,7 +153,6 @@ impl SessionPageData {
     // pub fn get_session_saved_refnos() {
     //
     // }
-
 }
 
 ///内含有的几个index part，名称表等等
@@ -159,8 +164,7 @@ pub struct SesIndexesData {
     pub last_ses_pageno: u32,
     pub last_ses_extno: u32,
     pub sesno: i32,
-    pub unknown_0: i32,  // 0xFF FF FF FF
-
+    pub unknown_0: i32, // 0xFF FF FF FF
 
     pub claim_data_pageno: u32,
     pub claim_data_extno: u32,
@@ -191,10 +195,10 @@ pub struct RootIndexPage {
     pub unknowns_0: [i32; 4],
     //00 00 01 ED
     #[deku(endian = "big")]
-    pub residual_num: u32,  //要用0x200 - residual_num 得到剩余的值
+    pub residual_num: u32, //要用0x200 - residual_num 得到剩余的值
     //80 00 00 01 80 00 00 01
     #[deku(endian = "big")]
-    pub lock: [i32; 2],   //可能是lock
+    pub lock: [i32; 2], //可能是lock
 
     #[deku(endian = "big")]
     pub last_pageno: u32,
@@ -204,7 +208,6 @@ pub struct RootIndexPage {
     pub lower_root: RefnoIndexPgId,
     pub upper_root: RefnoIndexPgId,
 }
-
 
 ///Index 里的数据条目
 #[derive(Debug, PartialEq, DekuRead, DekuWrite, Clone)]
@@ -220,7 +223,6 @@ pub struct RefnoDataLoc {
 }
 
 impl RefnoDataLoc {
-
     #[inline]
     pub fn get_refno(&self) -> RefU64 {
         RefU64::from_two_nums(self.refno_0, self.refno_1)
@@ -231,7 +233,6 @@ impl RefnoDataLoc {
         self.pgno as u64 * 0x800 + self.offset as u64 * 2
     }
 }
-
 
 #[derive(Debug, PartialEq, DekuRead, DekuWrite)]
 pub struct RefnoIndexPage {
@@ -244,11 +245,10 @@ pub struct RefnoIndexPage {
     pub unknowns_0: [i32; 4],
 
     #[deku(endian = "big")]
-    pub pfno: u32,   //还需要搞的清楚一点，这个值到底怎么来的
+    pub pfno: u32, //还需要搞的清楚一点，这个值到底怎么来的
 
     #[deku(reader = "read_refno_index_pgid(deku::rest, )")]
     pub data_locs: Vec<RefnoIndexPgId>,
-
 }
 
 //DekuWrite
@@ -267,19 +267,25 @@ pub struct IndexPageData {
     pub refno_locs: Vec<RefnoDataLoc>,
     #[derivative(Debug = "ignore")]
     #[deku(count = "deku::rest.len()/8")]
-    pub remain_zero_bytes: Vec<u8>,   //剩余的余量bytes
+    pub remain_zero_bytes: Vec<u8>, //剩余的余量bytes
 }
 
 impl IndexPageData {
     #[inline]
     pub fn get_max_pgno(&self) -> u32 {
-        self.refno_locs.iter().map(|x| x.pgno).max().unwrap_or_default()
+        self.refno_locs
+            .iter()
+            .map(|x| x.pgno)
+            .max()
+            .unwrap_or_default()
     }
 }
 
-
 //如果 level 为 2，格式还有点不一样
-fn read_refno_data_loc(mut rest: &BitSlice<u8, Msb0>, level: u32) -> Result<(&BitSlice<u8, Msb0>, Vec<RefnoDataLoc>), DekuError> {
+fn read_refno_data_loc(
+    mut rest: &BitSlice<u8, Msb0>,
+    level: u32,
+) -> Result<(&BitSlice<u8, Msb0>, Vec<RefnoDataLoc>), DekuError> {
     let mut vec = Vec::new();
     if level == 2 {
         //4 个未知数
@@ -302,7 +308,9 @@ fn read_refno_data_loc(mut rest: &BitSlice<u8, Msb0>, level: u32) -> Result<(&Bi
     Ok((rest, vec))
 }
 
-fn read_refno_index_pgid(rest: &BitSlice<u8, Msb0>) -> Result<(&BitSlice<u8, Msb0>, Vec<RefnoIndexPgId>), DekuError> {
+fn read_refno_index_pgid(
+    rest: &BitSlice<u8, Msb0>,
+) -> Result<(&BitSlice<u8, Msb0>, Vec<RefnoIndexPgId>), DekuError> {
     let mut pgids = Vec::new();
     let mut rest = rest;
     loop {
@@ -317,7 +325,6 @@ fn read_refno_index_pgid(rest: &BitSlice<u8, Msb0>) -> Result<(&BitSlice<u8, Msb
     }
     Ok((rest, pgids))
 }
-
 
 //todo 需要处理跨页的数据
 #[derive(Clone, Debug, PartialEq, Default, DekuRead, DekuWrite)]
@@ -344,7 +351,7 @@ pub struct ElePageData {
     #[deku(reader = "read_eles(deku::rest)")]
     pub eles_vec: Vec<EleRawData>,
     #[deku(count = "deku::rest.len()/8")]
-    pub remain_bytes: Vec<u8>,   //剩余的余量bytes
+    pub remain_bytes: Vec<u8>, //剩余的余量bytes
 }
 
 #[derive(Clone, Debug, PartialEq, DekuRead, DekuWrite)]
@@ -359,7 +366,7 @@ pub struct EleRawData {
     //00 00 00 02 00 00 00 02 00 00 00 02 00 00 00 00
     pub ref0: i32,
     pub ref1: i32,
-    pub noun: i32,   //还需要搞的清楚一点，这个值到底怎么来的
+    pub noun: i32, //还需要搞的清楚一点，这个值到底怎么来的
 
     pub parent_ref0: i32,
     pub parent_ref1: i32,
@@ -380,8 +387,9 @@ pub struct EleRawData {
 
 impl EleRawData {}
 
-
-fn read_members(rest: &BitSlice<u8, Msb0>) -> Result<(&BitSlice<u8, Msb0>, Option<EleMembers>), DekuError> {
+fn read_members(
+    rest: &BitSlice<u8, Msb0>,
+) -> Result<(&BitSlice<u8, Msb0>, Option<EleMembers>), DekuError> {
     let (_next_rest, peek) = u16::read(rest, Endian::Big)?;
     if peek != 0x2 {
         return Ok((rest, None));
@@ -390,7 +398,9 @@ fn read_members(rest: &BitSlice<u8, Msb0>) -> Result<(&BitSlice<u8, Msb0>, Optio
     Ok((next_rest, Some(membs)))
 }
 
-fn read_eles(rest: &BitSlice<u8, Msb0>) -> Result<(&BitSlice<u8, Msb0>, Vec<EleRawData>), DekuError> {
+fn read_eles(
+    rest: &BitSlice<u8, Msb0>,
+) -> Result<(&BitSlice<u8, Msb0>, Vec<EleRawData>), DekuError> {
     let mut vec = Vec::new();
     let mut rest = rest;
     loop {

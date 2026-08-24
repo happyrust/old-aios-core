@@ -44,7 +44,6 @@ pub fn cal_quat_by_zdir_with_xref(zdir: DVec3) -> DQuat {
     DQuat::from_mat3(&mat3)
 }
 
-
 pub fn convert_to_xyz(s: &str) -> String {
     s.replace("E", "X")
         .replace("N", "Y")

@@ -1,5 +1,3 @@
-
-
 pub mod spatial_computation;
 
 #[cfg(test)]

@@ -1,10 +1,10 @@
 use std::collections::BTreeMap;
 
-use crate::{AttrMap, CataContext, NamedAttrValue};
 use crate::expression::resolve::{resolve_axis_params, resolve_gms};
 use crate::parsed_data::CateGeomsInfo;
 use crate::pdms_data::{AxisParam, GmParam, ScomInfo};
 use crate::pdms_types::*;
+use crate::{AttrMap, CataContext, NamedAttrValue};
 
 ///查询 Axis 参数
 pub async fn query_axis_params(refno: RefnoEnum) -> anyhow::Result<BTreeMap<i32, AxisParam>> {
@@ -41,7 +41,7 @@ pub fn resolve_cata_comp(
     let jusl_param = if let Some(plin) = cur_context.get("JUSL") {
         if scom_info.plin_map.contains_key(plin.as_str()) {
             Some(scom_info.plin_map.get(plin.as_str()).unwrap().clone())
-        }  else {
+        } else {
             None
         }
     } else {
@@ -50,7 +50,7 @@ pub fn resolve_cata_comp(
 
     let na_plin_param = if scom_info.plin_map.contains_key("NA") {
         Some(scom_info.plin_map.get("NA").unwrap().clone())
-    }else{
+    } else {
         None
     };
 
@@ -63,7 +63,7 @@ pub fn resolve_cata_comp(
         &axis_param_map,
     );
     // dbg!((des_refno, &geometries));
-    
+
     let n_geometries = resolve_gms(
         des_refno,
         &scom_info.ngm_params,
@@ -72,7 +72,6 @@ pub fn resolve_cata_comp(
         &cur_context,
         &axis_param_map,
     );
-
 
     Ok(CateGeomsInfo {
         refno: cat_ref,
@@ -180,10 +179,7 @@ pub fn get_axis_param(attr_map: &NamedAttrMap) -> Option<AxisParam> {
 }
 
 ///获得gmse的params
-pub async fn query_gm_param(
-    att: &NamedAttrMap,
-    is_spro: bool,
-) -> Option<GmParam> {
+pub async fn query_gm_param(att: &NamedAttrMap, is_spro: bool) -> Option<GmParam> {
     // dbg!(a);
     let mut paxises = att.get_attr_strings_without_default(&["PAXI", "PAAX", "PBAX", "PCAX"]);
     if let Some(val) = att.get_val("PTS") {

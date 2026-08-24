@@ -3,8 +3,8 @@ use bevy_ecs::prelude::Component;
 use bevy_ecs::prelude::Event;
 use bevy_ecs::prelude::Resource;
 use serde::{Deserialize, Serialize};
-use std::collections::hash_map::DefaultHasher;
 use std::collections::HashMap;
+use std::collections::hash_map::DefaultHasher;
 use std::hash::{Hash, Hasher};
 
 ///水淹计算孔洞的结构体
@@ -60,7 +60,11 @@ impl ExportFloodingStpEvent {
     pub fn all_plugged_hole_refnos(&self) -> impl Iterator<Item = RefU64> + '_ {
         self.walls_map
             .values()
-            .map(|x| x.iter().filter(|x| x.is_plugged && !x.is_door).map(|x| x.refno))
+            .map(|x| {
+                x.iter()
+                    .filter(|x| x.is_plugged && !x.is_door)
+                    .map(|x| x.refno)
+            })
             .flatten()
     }
 
@@ -68,7 +72,11 @@ impl ExportFloodingStpEvent {
     pub fn all_plugged_door_refnos(&self) -> impl Iterator<Item = RefU64> + '_ {
         self.walls_map
             .values()
-            .map(|x| x.iter().filter(|x| x.is_plugged && x.is_door).map(|x| x.refno))
+            .map(|x| {
+                x.iter()
+                    .filter(|x| x.is_plugged && x.is_door)
+                    .map(|x| x.refno)
+            })
             .flatten()
     }
 

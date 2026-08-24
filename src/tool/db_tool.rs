@@ -40,7 +40,7 @@ pub fn is_uda(hash: i32) -> bool {
 
 #[inline]
 pub fn is_uda_name(name: &str) -> bool {
-     name.starts_with(":")
+    name.starts_with(":")
 }
 
 #[inline]

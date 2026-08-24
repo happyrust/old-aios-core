@@ -1,7 +1,9 @@
-use glam::{Mat3, Quat, Vec3};
 use crate::tool::dir_tool::parse_ori_str_to_quat;
 use crate::tool::direction_parse::parse_expr_to_dir;
-use crate::tool::math_tool::{quat_to_pdms_ori_xyz_str, to_pdms_ori_xyz_str, to_pdms_vec_str, to_pdms_vec_xyz_str};
+use crate::tool::math_tool::{
+    quat_to_pdms_ori_xyz_str, to_pdms_ori_xyz_str, to_pdms_vec_str, to_pdms_vec_xyz_str,
+};
+use glam::{Mat3, Quat, Vec3};
 
 #[test]
 fn test_rotation() {
@@ -34,5 +36,4 @@ fn test_rotation_complex() {
     // let rotation = parse_ori_str_to_quat("Y is Y 23.999 -X 89.952 Z and Z is Y 23.999 -X 0.0477 -Z").unwrap();
     // dbg!(Mat3::from_quat(rotation));
     // dbg!(quat_to_pdms_ori_xyz_str(&rotation, true));
-
 }

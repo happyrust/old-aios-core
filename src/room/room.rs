@@ -1,10 +1,10 @@
-use std::io::{Read, Write};
 use once_cell::sync::Lazy;
+use std::io::{Read, Write};
 use tokio::sync::RwLock;
 
 use crate::{
+    RefU64, SUL_DB,
     accel_tree::acceleration_tree::{AccelerationTree, RStarBoundingBox},
-    SUL_DB, RefU64,
 };
 
 //或者改成第一次，需要去加载，后续就不用了
@@ -80,6 +80,3 @@ pub async fn load_aabb_tree() -> anyhow::Result<bool> {
     // *GLOBAL_AABB_TREE.write().await = tree;
     Ok(false)
 }
-
-
-

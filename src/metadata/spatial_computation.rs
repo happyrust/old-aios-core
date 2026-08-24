@@ -137,7 +137,10 @@ fn rectangle_dimensions(mut points: [Vec3; 4], tol: f32) -> Option<(f32, f32)> {
 /// 获取panel的四个点集
 async fn get_panel_points(refno: RefnoEnum) -> anyhow::Result<Option<[Vec3; 4]>> {
     // 查询坐标
-    let sql = format!("(select value in.id.refno.POS from ( select value in.id from {}<-pe_owner where in.noun == 'PLOO' ) <-pe_owner)[0]",refno.to_pe_key());
+    let sql = format!(
+        "(select value in.id.refno.POS from ( select value in.id from {}<-pe_owner where in.noun == 'PLOO' ) <-pe_owner)[0]",
+        refno.to_pe_key()
+    );
     let mut resp = SUL_DB.query(&sql).await?;
     let r: Vec<Vec<f32>> = resp.take(0)?;
     // 分组

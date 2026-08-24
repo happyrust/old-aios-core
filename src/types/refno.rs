@@ -4,8 +4,8 @@ use bevy_reflect::Reflect;
 use sea_orm::entity::prelude::*;
 use serde::{Deserialize, Serialize};
 use serde::{Deserializer, Serializer};
-use serde_with::serde_as;
 use serde_with::DisplayFromStr;
+use serde_with::serde_as;
 use std::fmt::{Debug, Display, Formatter, Write};
 use std::hash::Hash;
 use std::ops::Deref;
@@ -523,12 +523,12 @@ impl RefI32Tuple {
 
     #[inline]
     pub fn get_0(&self) -> i32 {
-        self.0 .0
+        self.0.0
     }
 
     #[inline]
     pub fn get_1(&self) -> i32 {
-        self.0 .1
+        self.0.1
     }
 }
 
@@ -884,10 +884,12 @@ macro_rules! to_table_key {
     };
 }
 
-
 #[macro_export]
 macro_rules! to_table_keys {
     ($refnos:expr, $table:expr) => {
-        $refnos.into_iter().map(|x| x.latest().to_table_key($table)).collect::<Vec<_>>()
+        $refnos
+            .into_iter()
+            .map(|x| x.latest().to_table_key($table))
+            .collect::<Vec<_>>()
     };
 }

@@ -1,7 +1,7 @@
+use crate::SUL_DB;
 use crate::parsed_data::CateAxisParam;
 use crate::pdms_types::*;
-use crate::SUL_DB;
-use crate::{rs_surreal, NamedAttrMap, RefU64};
+use crate::{NamedAttrMap, RefU64, rs_surreal};
 use glam::Vec3;
 use std::sync::Arc;
 use surrealdb::sql::Thing;
@@ -408,17 +408,17 @@ async fn test_query_attmap() -> anyhow::Result<()> {
 #[tokio::test]
 async fn test_query_ancestor_of_type() -> anyhow::Result<()> {
     crate::init_test_surreal().await;
-    
+
     let refno = RefnoEnum::from("pe:24383_73928");
-    
+
     let site_ancestor = rs_surreal::query_ancestor_of_type(refno, "SITE".to_string()).await?;
     assert!(site_ancestor.is_some());
     let site_ancestor = site_ancestor.unwrap();
     assert_eq!(site_ancestor.to_string(), "24383_73927");
-    
+
     let non_existent = rs_surreal::query_ancestor_of_type(refno, "NONEXISTENT".to_string()).await?;
     assert!(non_existent.is_none());
-    
+
     Ok(())
 }
 
@@ -429,16 +429,14 @@ async fn test_get_named_attmap_with_uda() -> anyhow::Result<()> {
     let refno = RefnoEnum::from("pe:24383_66563");
     let attmap = rs_surreal::get_named_attmap_with_uda(refno).await?;
     dbg!(&attmap);
-    
+
     // Basic attributes should exist
     assert!(attmap.contains_key("NAME"));
     assert!(attmap.contains_key("REFNO"));
-    
+
     // Check UDA values
     // Get both default UDAs and overwritten UDAs
-    let uda_keys: Vec<_> = attmap.map.keys()
-        .filter(|k| k.starts_with(":"))
-        .collect();
+    let uda_keys: Vec<_> = attmap.map.keys().filter(|k| k.starts_with(":")).collect();
     assert!(!uda_keys.is_empty(), "Should contain UDA attributes");
 
     // Verify UDA values are properly typed

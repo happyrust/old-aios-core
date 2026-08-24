@@ -1,11 +1,10 @@
-use std::collections::BTreeMap;
-use crate::parsed_data::{CateAxisParam};
+use crate::parsed_data::CateAxisParam;
 use crate::types::*;
-use serde::{Serialize, Deserialize};
+use serde::{Deserialize, Serialize};
 use serde_with::serde_as;
+use std::collections::BTreeMap;
 //
 //
-
 
 #[serde_as]
 #[derive(Serialize, Deserialize, Clone, Debug, Default)]
@@ -15,7 +14,6 @@ pub struct InstPointMap {
     #[serde(default)]
     pub ptset_map: BTreeMap<String, CateAxisParam>,
 }
-
 
 #[test]
 fn test_de_ser() {
@@ -49,4 +47,3 @@ fn test_de_ser() {
 //         }
 //     }
 // }
-

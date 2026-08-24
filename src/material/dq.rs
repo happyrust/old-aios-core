@@ -5,18 +5,18 @@ use super::query::save_material_value;
 #[cfg(feature = "sql")]
 use super::query::save_material_value_test;
 
-use crate::aios_db_mgr::aios_mgr::AiosDBMgr;
-use crate::{init_test_surreal, RefnoEnum};
 use crate::SUL_DB;
+use crate::aios_db_mgr::aios_mgr::AiosDBMgr;
 use crate::{
-    get_children_pes, get_pe, insert_into_table_with_chunks, query_filter_deep_children, RefU64,
+    RefU64, get_children_pes, get_pe, insert_into_table_with_chunks, query_filter_deep_children,
 };
-use calamine::{open_workbook, RangeDeserializerBuilder, Reader, Xls};
+use crate::{RefnoEnum, init_test_surreal};
+use calamine::{RangeDeserializerBuilder, Reader, Xls, open_workbook};
 use serde_derive::{Deserialize, Serialize};
 use serde_json::Value;
 use std::collections::HashMap;
-use surrealdb::engine::any::Any;
 use surrealdb::Surreal;
+use surrealdb::engine::any::Any;
 use tokio::task::{self, JoinHandle};
 
 lazy_static::lazy_static!(
@@ -111,14 +111,11 @@ const BRAN_DATA_FIELDS: [&'static str; 24] = [
 const DQ_TABLE_NAME: &'static str = "电气专业_托盘及接地";
 
 /// 电气专业 托盘及接地
-pub async fn save_dq_material(
-    refno: RefU64,
-) -> Vec<JoinHandle<()>> {
+pub async fn save_dq_material(refno: RefU64) -> Vec<JoinHandle<()>> {
     let db = SUL_DB.clone();
     let mut handles = vec![];
     match get_dq_bran_list(db.clone(), vec![refno]).await {
         Ok(mut r) => {
-
             let mut str_r = r.clone();
             let material_data = read_dq_material_excel().unwrap_or_default();
             get_dq_value_from_material(&material_data, &mut r);
@@ -129,7 +126,8 @@ pub async fn save_dq_material(
             let db_clone = db.clone();
             if !r_clone.is_empty() {
                 let task = task::spawn(async move {
-                    match insert_into_table_with_chunks(&db_clone, "material_elec_list", r_clone).await
+                    match insert_into_table_with_chunks(&db_clone, "material_elec_list", r_clone)
+                        .await
                     {
                         Ok(_) => {}
                         Err(e) => {
@@ -141,7 +139,9 @@ pub async fn save_dq_material(
             }
             if !str_r_clone.is_empty() {
                 let task = task::spawn(async move {
-                    match insert_into_table_with_chunks(&db, "material_elec_list", str_r_clone).await {
+                    match insert_into_table_with_chunks(&db, "material_elec_list", str_r_clone)
+                        .await
+                    {
                         Ok(_) => {}
                         Err(e) => {
                             dbg!(&e.to_string());
@@ -160,7 +160,15 @@ pub async fn save_dq_material(
                     match create_table_sql(&pool, &DQ_TABLE_NAME, &FIELDS).await {
                         Ok(_) => {
                             if !r.is_empty() {
-                                match save_material_value_test(&pool, &DQ_TABLE_NAME, &BRAN_DATA_FIELDS, &DQ_CHINESE_FIELDS, r).await {
+                                match save_material_value_test(
+                                    &pool,
+                                    &DQ_TABLE_NAME,
+                                    &BRAN_DATA_FIELDS,
+                                    &DQ_CHINESE_FIELDS,
+                                    r,
+                                )
+                                .await
+                                {
                                     Ok(_) => {}
                                     Err(e) => {
                                         dbg!(&e.to_string());
@@ -205,19 +213,27 @@ fn read_dq_material_excel() -> anyhow::Result<HashMap<String, Vec<DqMaterial>>> 
 // 将材料表的 标准号 和 单位 填入其中
 fn get_dq_value_from_material(
     material_data: &HashMap<String, Vec<DqMaterial>>,
-    mut value: &mut Vec<HashMap<String,Value>>,
+    mut value: &mut Vec<HashMap<String, Value>>,
 ) {
     for mut d in value.iter_mut() {
-        for foreign_key in ["spre","catr"] {
-            if d.contains_key(foreign_key) && material_data.contains_key(&d.get(foreign_key).unwrap().to_string().replace("\"","")) {
-                let material_value = material_data.get(&d.get(foreign_key).unwrap().to_string().replace("\"","")).unwrap();
+        for foreign_key in ["spre", "catr"] {
+            if d.contains_key(foreign_key)
+                && material_data
+                    .contains_key(&d.get(foreign_key).unwrap().to_string().replace("\"", ""))
+            {
+                let material_value = material_data
+                    .get(&d.get(foreign_key).unwrap().to_string().replace("\"", ""))
+                    .unwrap();
                 if material_value.is_empty() {
                     continue;
                 };
                 let value = material_value[0].clone();
-                d.entry("stander_num".to_string()).or_insert(Value::String(value.stander_num.unwrap_or("".to_string())));
-                d.entry("unit".to_string()).or_insert(Value::String(value.unit.unwrap_or("".to_string())));
-                d.entry("item_num".to_string()).or_insert(Value::String(value.code.unwrap_or("".to_string())));
+                d.entry("stander_num".to_string())
+                    .or_insert(Value::String(value.stander_num.unwrap_or("".to_string())));
+                d.entry("unit".to_string())
+                    .or_insert(Value::String(value.unit.unwrap_or("".to_string())));
+                d.entry("item_num".to_string())
+                    .or_insert(Value::String(value.code.unwrap_or("".to_string())));
             }
         }
     }
@@ -452,17 +468,14 @@ pub async fn get_dq_bran_list(
         // 查询电气托盘的数据
         let refnos = query_filter_deep_children(refno.into(), &["BRAN"]).await?;
         if !refnos.is_empty() {
-            let refnos_str =
-                &refnos
-                    .into_iter()
-                    .map(|refno| refno.to_pe_key())
-                    .collect::<Vec<String>>().join(",");
-            let sql = format!(
-                r#"return fn::dq_bran([{}])"#,
-                refnos_str
-            );
+            let refnos_str = &refnos
+                .into_iter()
+                .map(|refno| refno.to_pe_key())
+                .collect::<Vec<String>>()
+                .join(",");
+            let sql = format!(r#"return fn::dq_bran([{}])"#, refnos_str);
             let mut response = db.query(&sql).await?;
-            match response.take::<Vec<HashMap<String,Value>>>(0) {
+            match response.take::<Vec<HashMap<String, Value>>>(0) {
                 Ok(mut result) => {
                     data.append(&mut result);
                 }
@@ -475,17 +488,14 @@ pub async fn get_dq_bran_list(
         // 查询电气支吊架的数据
         let refnos = query_filter_deep_children(refno.into(), &["STRU"]).await?;
         if !refnos.is_empty() {
-            let refnos_str =
-                &refnos
-                    .into_iter()
+            let refnos_str = &refnos
+                .into_iter()
                 .map(|refno| refno.to_pe_key())
-                .collect::<Vec<String>>().join(",");
-            let sql = format!(
-                r#"return fn::dq_stru([{}])"#,
-                refnos_str
-            );
+                .collect::<Vec<String>>()
+                .join(",");
+            let sql = format!(r#"return fn::dq_stru([{}])"#, refnos_str);
             let mut response = db.query(&sql).await?;
-            match response.take::<Vec<HashMap<String,Value>>>(0) {
+            match response.take::<Vec<HashMap<String, Value>>>(0) {
                 Ok(mut result) => {
                     data.append(&mut result);
                 }
@@ -498,17 +508,14 @@ pub async fn get_dq_bran_list(
         // 电缆及接地
         let refnos = query_filter_deep_children(refno.into(), &["GENSEC"]).await?;
         if !refnos.is_empty() {
-            let refnos_str =
-                &refnos
-                    .into_iter()
+            let refnos_str = &refnos
+                .into_iter()
                 .map(|refno| refno.to_pe_key())
-                .collect::<Vec<String>>().join(",");
-            let sql = format!(
-                r#"return fn::dq_gensec([{}])"#,
-                refnos_str
-            );
+                .collect::<Vec<String>>()
+                .join(",");
+            let sql = format!(r#"return fn::dq_gensec([{}])"#, refnos_str);
             let mut response = db.query(&sql).await?;
-            match response.take::<Vec<HashMap<String,Value>>>(0) {
+            match response.take::<Vec<HashMap<String, Value>>>(0) {
                 Ok(mut result) => {
                     data.append(&mut result);
                 }

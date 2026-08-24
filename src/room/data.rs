@@ -1,7 +1,7 @@
+use crate::RefU64;
 use bevy_transform::prelude::Transform;
 use parry3d::bounding_volume::Aabb;
 use serde_derive::{Deserialize, Serialize};
-use crate::RefU64;
 
 ///Room元素
 #[derive(Default, Debug, Serialize, Deserialize)]
@@ -29,5 +29,3 @@ pub struct RoomPanelElement {
     ///对应的方位
     pub transform: Transform,
 }
-
-

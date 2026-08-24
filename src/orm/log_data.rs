@@ -1,8 +1,8 @@
-use serde_with::serde_as;
 use crate::types::*;
-use serde::{Serialize, Deserialize};
-use sea_orm::{entity::prelude::*, Schema, QueryTrait, DatabaseBackend};
 use chrono::{DateTime, Local, Utc};
+use sea_orm::{DatabaseBackend, QueryTrait, Schema, entity::prelude::*};
+use serde::{Deserialize, Serialize};
+use serde_with::serde_as;
 
 #[serde_as]
 #[derive(Serialize, Deserialize, Clone, Debug, Default, DeriveEntityModel)]
@@ -20,4 +20,3 @@ pub struct Model {
 pub enum Relation {}
 
 impl ActiveModelBehavior for ActiveModel {}
-

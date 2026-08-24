@@ -1,6 +1,6 @@
-use lazy_static::lazy_static;
-use crate::types::NounHash;
 use crate::tool::db_tool::{db1_hash, db1_hash_const};
+use crate::types::NounHash;
+use lazy_static::lazy_static;
 use std::collections::HashSet;
 
 pub const MAX_INSERT_LENGTH: usize = 10000;
@@ -34,7 +34,7 @@ pub const GENSEC_HASH: NounHash = db1_hash_const("GENSEC");
 pub const POHE_HASH: NounHash = db1_hash_const("POHE");
 //多边形的处理
 pub const REVO_HASH: NounHash = db1_hash_const("REVO");
-pub const NREV_HASH: NounHash = db1_hash_const("NREV");   //todo 负实体，后面需要加入
+pub const NREV_HASH: NounHash = db1_hash_const("NREV"); //todo 负实体，后面需要加入
 
 const ATT_PAXI: i32 = 0xB146F;
 const ATT_PAAX: i32 = 0xF543D;
@@ -120,33 +120,93 @@ const IMP_DPRO: i32 = 0xCD234;
 lazy_static! {
     pub static ref EXPR_ATT_SET: HashSet<i32> = {
         let mut s = HashSet::new();
-        s.insert(ATT_PAXI);s.insert(ATT_PAAX);s.insert(ATT_PBAX);s.insert(ATT_PCAX);
+        s.insert(ATT_PAXI);
+        s.insert(ATT_PAAX);
+        s.insert(ATT_PBAX);
+        s.insert(ATT_PCAX);
         s.insert(ATT_PLAX);
-        s.insert(ATT_PX);s.insert(ATT_PY);s.insert(ATT_PZ);s.insert(ATT_PDIA);
-        s.insert(ATT_PHEI);s.insert(ATT_PDIS);s.insert(ATT_PCON);s.insert(ATT_PBOR);
-        s.insert(ATT_PPRO);s.insert(ATT_DPRO);s.insert(ATT_BTHK);s.insert(ATT_BDIA);
-        s.insert(ATT_PTDI);s.insert(ATT_PBDI);s.insert(ATT_PBTP);s.insert(ATT_PCTP);
-        s.insert(ATT_PBBT);s.insert(ATT_PCBT);s.insert(ATT_PXLE);s.insert(ATT_PYLE);
-        s.insert(ATT_PZLE);s.insert(ATT_PTDM);s.insert(ATT_PBDM);s.insert(ATT_PTCDI);
-        s.insert(ATT_POFF);s.insert(ATT_DX);s.insert(ATT_DY);s.insert(ATT_DY);
-        s.insert(ATT_PXTS);s.insert(ATT_PYTS);s.insert(ATT_PXBS);s.insert(ATT_PYBS);
-        s.insert(ATT_PRAD);s.insert(ATT_PWID);s.insert(ATT_DRAD);s.insert(ATT_ALLANG);
-        s.insert(ATT_PZAXI);s.insert(ATT_PANG); s.insert(ATT_BANG); s.insert(ATT_PTCPOS);
+        s.insert(ATT_PX);
+        s.insert(ATT_PY);
+        s.insert(ATT_PZ);
+        s.insert(ATT_PDIA);
+        s.insert(ATT_PHEI);
+        s.insert(ATT_PDIS);
+        s.insert(ATT_PCON);
+        s.insert(ATT_PBOR);
+        s.insert(ATT_PPRO);
+        s.insert(ATT_DPRO);
+        s.insert(ATT_BTHK);
+        s.insert(ATT_BDIA);
+        s.insert(ATT_PTDI);
+        s.insert(ATT_PBDI);
+        s.insert(ATT_PBTP);
+        s.insert(ATT_PCTP);
+        s.insert(ATT_PBBT);
+        s.insert(ATT_PCBT);
+        s.insert(ATT_PXLE);
+        s.insert(ATT_PYLE);
+        s.insert(ATT_PZLE);
+        s.insert(ATT_PTDM);
+        s.insert(ATT_PBDM);
+        s.insert(ATT_PTCDI);
+        s.insert(ATT_POFF);
+        s.insert(ATT_DX);
+        s.insert(ATT_DY);
+        s.insert(ATT_DY);
+        s.insert(ATT_PXTS);
+        s.insert(ATT_PYTS);
+        s.insert(ATT_PXBS);
+        s.insert(ATT_PYBS);
+        s.insert(ATT_PRAD);
+        s.insert(ATT_PWID);
+        s.insert(ATT_DRAD);
+        s.insert(ATT_ALLANG);
+        s.insert(ATT_PZAXI);
+        s.insert(ATT_PANG);
+        s.insert(ATT_BANG);
+        s.insert(ATT_PTCPOS);
 
-        s.insert(IMP_PAXI);s.insert(IMP_PCON);s.insert(IMP_PDIS);s.insert(IMP_PBOR);
-        s.insert(IMP_PDIA);s.insert(IMP_PHEI);s.insert(IMP_PTDI);s.insert(IMP_PTDM);
-        s.insert(IMP_PBDI);s.insert(IMP_PBDM);s.insert(IMP_PPRO);s.insert(IMP_PRAD);
-        s.insert(IMP_PX);s.insert(IMP_PY);s.insert(IMP_PZ);s.insert(IMP_PXLE);
-        s.insert(IMP_PYLE);s.insert(IMP_PZLE);s.insert(IMP_PCTP);s.insert(IMP_PCBT);
-        s.insert(IMP_PBBT);s.insert(IMP_PBOF);s.insert(IMP_PCOF);s.insert(IMP_PBTP);
-        s.insert(IMP_PTCDI);s.insert(IMP_POFF);s.insert(IMP_DX);s.insert(IMP_DY);
-        s.insert(IMP_PLAX);s.insert(IMP_PXTS);s.insert(IMP_PYTS);s.insert(IMP_PXBS);
-        s.insert(IMP_PYBS);s.insert(IMP_DPRO);s.insert(IMP_PZAXI);
-        s.insert(-ATT_ALLANG); s.insert(-ATT_PWID);s.insert(-ATT_PANG);
+        s.insert(IMP_PAXI);
+        s.insert(IMP_PCON);
+        s.insert(IMP_PDIS);
+        s.insert(IMP_PBOR);
+        s.insert(IMP_PDIA);
+        s.insert(IMP_PHEI);
+        s.insert(IMP_PTDI);
+        s.insert(IMP_PTDM);
+        s.insert(IMP_PBDI);
+        s.insert(IMP_PBDM);
+        s.insert(IMP_PPRO);
+        s.insert(IMP_PRAD);
+        s.insert(IMP_PX);
+        s.insert(IMP_PY);
+        s.insert(IMP_PZ);
+        s.insert(IMP_PXLE);
+        s.insert(IMP_PYLE);
+        s.insert(IMP_PZLE);
+        s.insert(IMP_PCTP);
+        s.insert(IMP_PCBT);
+        s.insert(IMP_PBBT);
+        s.insert(IMP_PBOF);
+        s.insert(IMP_PCOF);
+        s.insert(IMP_PBTP);
+        s.insert(IMP_PTCDI);
+        s.insert(IMP_POFF);
+        s.insert(IMP_DX);
+        s.insert(IMP_DY);
+        s.insert(IMP_PLAX);
+        s.insert(IMP_PXTS);
+        s.insert(IMP_PYTS);
+        s.insert(IMP_PXBS);
+        s.insert(IMP_PYBS);
+        s.insert(IMP_DPRO);
+        s.insert(IMP_PZAXI);
+        s.insert(-ATT_ALLANG);
+        s.insert(-ATT_PWID);
+        s.insert(-ATT_PANG);
         s
     };
 }
-
 
 pub const HAS_PLIN_TYPES: [&str; 4] = ["SCTN", "GENSEC", "WALL", "STWALL"];
 

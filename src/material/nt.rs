@@ -5,19 +5,19 @@ use super::query::save_material_value;
 #[cfg(feature = "sql")]
 use super::query::save_material_value_test;
 
+use crate::SUL_DB;
 use crate::aios_db_mgr::aios_mgr::AiosDBMgr;
 use crate::init_test_surreal;
-use crate::SUL_DB;
-use crate::{get_pe, insert_into_table_with_chunks, query_filter_deep_children, RefU64};
+use crate::{RefU64, get_pe, insert_into_table_with_chunks, query_filter_deep_children};
+use anyhow::anyhow;
 use serde_derive::{Deserialize, Serialize};
 use serde_json::Value;
 use std::collections::HashMap;
-use surrealdb::engine::any::Any;
 use surrealdb::Surreal;
+use surrealdb::engine::any::Any;
 use tokio::task::{self, JoinHandle};
-use anyhow::anyhow;
 
-lazy_static::lazy_static!{
+lazy_static::lazy_static! {
     static ref CHINESE_FIELDS: HashMap<&'static str, &'static str> = {
         let mut map = HashMap::new();
         map.insert("id", "参考号");
@@ -54,14 +54,14 @@ const DATA_FIELDS: [&str; 7] = [
 ];
 
 /// 暖通专业 大宗材料
-pub async fn save_nt_material_dzcl(
-    refno: RefU64,
-) -> Vec<JoinHandle<()>> {
+pub async fn save_nt_material_dzcl(refno: RefU64) -> Vec<JoinHandle<()>> {
     let db = SUL_DB.clone();
     let mut handles = Vec::new();
     match get_nt_valv_list_material(db.clone(), vec![refno]).await {
         Ok(r) => {
-            if r.is_empty() { return handles; }
+            if r.is_empty() {
+                return handles;
+            }
             let r_clone = r.clone();
             let task = task::spawn(async move {
                 match insert_into_table_with_chunks(&db, "material_nt_valv", r_clone).await {
@@ -79,11 +79,18 @@ pub async fn save_nt_material_dzcl(
                     return handles;
                 };
                 let task = task::spawn(async move {
-
                     match create_table_sql(&pool, &TABLE, &FIELDS).await {
                         Ok(_) => {
                             if !r.is_empty() {
-                                match save_material_value_test(&pool, &TABLE, &DATA_FIELDS, &CHINESE_FIELDS, r).await {
+                                match save_material_value_test(
+                                    &pool,
+                                    &TABLE,
+                                    &DATA_FIELDS,
+                                    &CHINESE_FIELDS,
+                                    r,
+                                )
+                                .await
+                                {
                                     Ok(_) => {}
                                     Err(e) => {
                                         dbg!(&e.to_string());
@@ -155,15 +162,12 @@ pub async fn get_nt_valv_list_material(
         }
         // 查询 DAMP 的数据
         let refnos = query_filter_deep_children(refno.into(), &["DAMP"]).await?;
-        let refnos_str =
-            &refnos
-                .into_iter()
-                .map(|refno| refno.to_pe_key())
-                .collect::<Vec<String>>().join(",");
-        let sql = format!(
-            r#"return fn::nt_valv([{}])"#,
-            refnos_str
-        );
+        let refnos_str = &refnos
+            .into_iter()
+            .map(|refno| refno.to_pe_key())
+            .collect::<Vec<String>>()
+            .join(",");
+        let sql = format!(r#"return fn::nt_valv([{}])"#, refnos_str);
         let mut response = db.query(&sql).await?;
         match response.take::<Vec<HashMap<String, Value>>>(0) {
             Ok(mut result) => {

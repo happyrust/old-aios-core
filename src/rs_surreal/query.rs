@@ -17,24 +17,24 @@ use crate::ssc_setting::PbsElement;
 use crate::table::ToTable;
 use crate::tool::db_tool::db1_dehash;
 use crate::tool::math_tool::*;
-use crate::{get_db_option, to_table_keys, DBType};
-use crate::{graph::QUERY_DEEP_CHILDREN_REFNOS, types::*};
+use crate::{DBType, get_db_option, to_table_keys};
 use crate::{NamedAttrMap, RefU64};
-use crate::{SurlValue, SUL_DB};
-use cached::proc_macro::cached;
+use crate::{SUL_DB, SurlValue};
+use crate::{graph::QUERY_DEEP_CHILDREN_REFNOS, types::*};
+use anyhow::anyhow;
 use cached::Cached;
+use cached::proc_macro::cached;
 use chrono::NaiveDateTime;
 use dashmap::DashMap;
 use indexmap::IndexMap;
 use itertools::Itertools;
 use serde::{Deserialize, Serialize};
-use serde_with::serde_as;
 use serde_with::DisplayFromStr;
+use serde_with::serde_as;
 use std::collections::{BTreeMap, HashMap};
-use anyhow::anyhow;
+use surrealdb::Surreal;
 use surrealdb::engine::any::Any;
 use surrealdb::sql::{Datetime, Value};
-use surrealdb::Surreal;
 
 #[derive(Clone, Debug, Default, Deserialize)]
 struct KV<K, V> {
@@ -81,13 +81,13 @@ pub async fn get_default_name(refno: RefnoEnum) -> anyhow::Result<Option<String>
 
 ///查询到祖先节点列表
 /// 获取指定refno的所有祖先节点
-/// 
+///
 /// # 参数
 /// * `refno` - 要查询的refno
-/// 
+///
 /// # 返回值
 /// * `Vec<RefnoEnum>` - 祖先节点的refno列表
-/// 
+///
 /// # 错误
 /// * 如果查询失败会返回错误
 pub async fn query_ancestor_refnos(refno: RefnoEnum) -> anyhow::Result<Vec<RefnoEnum>> {
@@ -104,18 +104,16 @@ pub async fn query_ancestor_refnos_on(
 ) -> anyhow::Result<Vec<RefnoEnum>> {
     let sql = format!("return fn::ancestor({}).refno;", refno.to_pe_key());
     match db.query(&sql).await {
-        Ok(mut response) => {
-            match response.take::<Vec<Option<RefnoEnum>>>(0) {
-                Ok(s) => {
-                    let s = s.into_iter().filter_map(|s| s).collect::<Vec<RefnoEnum>>();
-                    Ok(s)
-                }
-                Err(e) => {
-                    dbg!(&sql);
-                    Err(anyhow!(e.to_string()))
-                }
+        Ok(mut response) => match response.take::<Vec<Option<RefnoEnum>>>(0) {
+            Ok(s) => {
+                let s = s.into_iter().filter_map(|s| s).collect::<Vec<RefnoEnum>>();
+                Ok(s)
             }
-        }
+            Err(e) => {
+                dbg!(&sql);
+                Err(anyhow!(e.to_string()))
+            }
+        },
         Err(e) => {
             dbg!(&sql);
             Err(anyhow!(e.to_string()))
@@ -140,7 +138,10 @@ async fn query_ancestor_refnos_cached(refno: RefnoEnum) -> anyhow::Result<Vec<Re
 /// # 错误
 /// * 如果查询失败会返回错误
 #[cached(result = true)]
-pub async fn query_ancestor_of_type(refno: RefnoEnum, ancestor_type: String) -> anyhow::Result<Option<RefnoEnum>> {
+pub async fn query_ancestor_of_type(
+    refno: RefnoEnum,
+    ancestor_type: String,
+) -> anyhow::Result<Option<RefnoEnum>> {
     let sql = format!(
         "return fn::find_ancestor_type({}, '{}');",
         refno.to_pe_key(),
@@ -263,7 +264,7 @@ async fn get_type_name_cached(refno: RefnoEnum) -> anyhow::Result<String> {
 /// # 返回值
 /// * `Vec<String>` - 类型名称列表
 pub async fn get_type_names(
-    refnos: impl Iterator<Item=&RefnoEnum>,
+    refnos: impl Iterator<Item = &RefnoEnum>,
 ) -> anyhow::Result<Vec<String>> {
     let pe_keys = refnos.into_iter().map(|x| x.to_pe_key()).join(",");
     let mut response = super::staging::data_db()
@@ -293,15 +294,11 @@ pub async fn get_self_and_owner_type_name(refno: RefnoEnum) -> anyhow::Result<Ve
 }
 
 #[cached(name = "GET_SELF_AND_OWNER_TYPE_NAME", result = true)]
-async fn get_self_and_owner_type_name_cached(
-    refno: RefnoEnum,
-) -> anyhow::Result<Vec<String>> {
+async fn get_self_and_owner_type_name_cached(refno: RefnoEnum) -> anyhow::Result<Vec<String>> {
     get_self_and_owner_type_name_uncached(refno).await
 }
 
-async fn get_self_and_owner_type_name_uncached(
-    refno: RefnoEnum,
-) -> anyhow::Result<Vec<String>> {
+async fn get_self_and_owner_type_name_uncached(refno: RefnoEnum) -> anyhow::Result<Vec<String>> {
     let sql = format!(
         "select value [noun, owner.noun ?? ''] from only {} limit 1",
         refno.to_pe_key()
@@ -855,11 +852,12 @@ pub async fn get_children_pes(refno: RefnoEnum) -> anyhow::Result<Vec<SPdmsEleme
 
 ///传入一个负数的参考号数组，返回一个数组，包含所有子孙的参考号
 pub async fn get_all_children_refnos(
-    refnos: impl IntoIterator<Item=&RefnoEnum>,
+    refnos: impl IntoIterator<Item = &RefnoEnum>,
 ) -> anyhow::Result<Vec<RefnoEnum>> {
     let pe_keys = refnos.into_iter().map(|x| x.to_pe_key()).join(",");
-    let sql =
-        format!("array::flatten(select value in from [{pe_keys}]<-pe_owner where record::exists(in.id) and !in.deleted)");
+    let sql = format!(
+        "array::flatten(select value in from [{pe_keys}]<-pe_owner where record::exists(in.id) and !in.deleted)"
+    );
     let mut response = SUL_DB.query(sql).await?;
     let refnos: Vec<RefnoEnum> = response.take(0)?;
     Ok(refnos)
@@ -1059,7 +1057,7 @@ pub async fn query_multi_children_refnos(refnos: &[RefnoEnum]) -> anyhow::Result
             Err(e) => {
                 eprintln!("获取子参考号时出错: refno={:?}, 错误: {:?}", refno, e);
                 // 这里可以选择继续循环或返回错误
-                return Err(e);  // 如果要中断并返回错误
+                return Err(e); // 如果要中断并返回错误
                 // 或者跳过此错误项，继续处理下一个
             }
         };
@@ -1070,7 +1068,7 @@ pub async fn query_multi_children_refnos(refnos: &[RefnoEnum]) -> anyhow::Result
 ///按cata_hash 分组获得不同的参考号类型
 // #[cached(result = true)]
 pub async fn query_group_by_cata_hash(
-    refnos: impl IntoIterator<Item=&RefnoEnum>,
+    refnos: impl IntoIterator<Item = &RefnoEnum>,
 ) -> anyhow::Result<DashMap<String, CataHashRefnoKV>> {
     let keys = refnos
         .into_iter()
@@ -1242,8 +1240,8 @@ pub async fn insert_into_table_with_chunks<T>(
     table: &str,
     value: Vec<T>,
 ) -> anyhow::Result<()>
-    where
-        T: Sized + Serialize,
+where
+    T: Sized + Serialize,
 {
     for r in value.chunks(MAX_INSERT_LENGTH) {
         let json = serde_json::to_string(r)?;
@@ -1383,7 +1381,7 @@ pub async fn query_refno_sesno(
 
 ///查询历史数据的日期
 pub async fn query_his_dates(
-    refnos: impl IntoIterator<Item=&RefnoEnum>,
+    refnos: impl IntoIterator<Item = &RefnoEnum>,
 ) -> anyhow::Result<BTreeMap<RefnoEnum, NaiveDateTime>> {
     let refnos: Vec<_> = refnos.into_iter().collect();
     let pes = to_table_keys!(refnos.iter(), "pe");
@@ -1401,7 +1399,7 @@ pub async fn query_his_dates(
 
 /// 查询最新的参考号, 需要限制日期
 pub async fn query_latest_refnos(
-    refnos: impl IntoIterator<Item=&RefnoEnum>,
+    refnos: impl IntoIterator<Item = &RefnoEnum>,
     dt: NaiveDateTime,
 ) -> anyhow::Result<Vec<RefnoEnum>> {
     let pes = to_table_keys!(refnos, "pe");
@@ -1457,8 +1455,8 @@ mod test {
             &[pe_key!("17496_172825")],
             NaiveDateTime::from_str("2025-07-03T07:18:52Z").unwrap(),
         )
-            .await
-            .unwrap();
+        .await
+        .unwrap();
         dbg!(&r);
         assert_eq!(r.len(), 1);
         assert_eq!(r[0], pe_key!("17496_172825"));
@@ -1467,8 +1465,8 @@ mod test {
             &[pe_key!("17496_172825")],
             NaiveDateTime::from_str("2022-07-03T07:18:52Z").unwrap(),
         )
-            .await
-            .unwrap();
+        .await
+        .unwrap();
         dbg!(&r);
         assert_eq!(r.len(), 0);
     }

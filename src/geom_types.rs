@@ -1,22 +1,22 @@
-use bevy_transform::prelude::Transform;
-use parry3d::bounding_volume::Aabb;
-use serde::{Deserialize, Serialize};
-use crate::parsed_data::geo_params_data::PdmsGeoParam;
-use crate::types::*;
-use serde_with::serde_as;
-use serde_with::DisplayFromStr;
-use std::borrow::BorrowMut;
-use std::hash::{Hash, Hasher};
-#[cfg(feature = "occ")]
-use opencascade::primitives::Shape;
 use crate::geometry::EleInstGeo;
-use crate::parsed_data::geo_params_data::PdmsGeoParam::PrimSCylinder;
 use crate::geometry::GeoBasicType;
+use crate::parsed_data::geo_params_data::PdmsGeoParam;
+use crate::parsed_data::geo_params_data::PdmsGeoParam::PrimSCylinder;
 #[cfg(feature = "occ")]
 use crate::prim_geo::basic::OccSharedShape;
 use crate::shape::pdms_shape::RsVec3;
+use crate::types::*;
+use bevy_transform::prelude::Transform;
+#[cfg(feature = "occ")]
+use opencascade::primitives::Shape;
+use parry3d::bounding_volume::Aabb;
+use serde::{Deserialize, Serialize};
+use serde_with::DisplayFromStr;
+use serde_with::serde_as;
+use std::borrow::BorrowMut;
+use std::hash::{Hash, Hasher};
 
-#[derive(Serialize, Deserialize, Debug, Default,Clone)]
+#[derive(Serialize, Deserialize, Debug, Default, Clone)]
 pub struct RvmGeoInfo {
     pub _key: String,
     pub aabb: Option<Aabb>,
@@ -26,7 +26,7 @@ pub struct RvmGeoInfo {
 }
 
 #[serde_as]
-#[derive(Serialize, Deserialize, Debug, Default,Clone)]
+#[derive(Serialize, Deserialize, Debug, Default, Clone)]
 pub struct RvmGeoInfos {
     #[serde_as(as = "DisplayFromStr")]
     pub refno: RefU64,
@@ -35,21 +35,20 @@ pub struct RvmGeoInfos {
     pub rvm_inst_geo: Vec<RvmInstGeo>,
 }
 
-
 impl RvmGeoInfos {
-
     ///获得关键点
-    pub fn key_points(&self) -> Vec<RsVec3>{
-        self.rvm_inst_geo.iter()
-            .map(|x|
-                x.geo_param.key_points()
-                .into_iter()
-                .map(|v| self.world_transform.transform_point(*v).into())
-            )
+    pub fn key_points(&self) -> Vec<RsVec3> {
+        self.rvm_inst_geo
+            .iter()
+            .map(|x| {
+                x.geo_param
+                    .key_points()
+                    .into_iter()
+                    .map(|v| self.world_transform.transform_point(*v).into())
+            })
             .flatten()
             .collect()
     }
-
 
     #[cfg(feature = "occ")]
     pub fn gen_occ_shape(&self) -> Option<Shape> {
@@ -104,10 +103,7 @@ impl RvmGeoInfos {
         // Some(final_shape)
         None
     }
-
-
 }
-
 
 #[serde_as]
 #[derive(Serialize, Deserialize, Debug, Default)]
@@ -129,7 +125,9 @@ impl RvmTubiGeoInfos {
                     data.phei = self.world_transform.scale.z;
                     data.pdia = self.world_transform.scale.x;
                 }
-                _ => { continue; }
+                _ => {
+                    continue;
+                }
             }
             geo.aabb = self.aabb;
         }
@@ -143,7 +141,7 @@ impl RvmTubiGeoInfos {
 }
 
 /// rvm 需要的 元件 geo 数据
-#[derive(Serialize, Deserialize, Debug, Default,Clone)]
+#[derive(Serialize, Deserialize, Debug, Default, Clone)]
 pub struct RvmInstGeo {
     pub geo_param: PdmsGeoParam,
     pub geo_hash: String,
@@ -156,9 +154,8 @@ pub struct RvmInstGeo {
 }
 
 impl RvmInstGeo {
-
     #[inline]
-    pub fn key_points(&self) -> Vec<RsVec3>{
+    pub fn key_points(&self) -> Vec<RsVec3> {
         self.geo_param.key_points()
     }
 
@@ -173,4 +170,3 @@ impl RvmInstGeo {
         None
     }
 }
-

@@ -1,6 +1,6 @@
+use crate::SUL_DB;
 use crate::function::define_common_functions;
 use crate::options::DbOption;
-use crate::SUL_DB;
 use config::{Config, File};
 use surrealdb::opt::auth::Root;
 // pub mod test_mdb;

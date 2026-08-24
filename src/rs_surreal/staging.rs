@@ -14,8 +14,8 @@
 //! 模块直接持有 `SUL_DB`，按 ADR-017 ④ 永远直读直写持久层。
 
 use once_cell::sync::Lazy;
-use surrealdb::engine::any::Any;
 use surrealdb::Surreal;
+use surrealdb::engine::any::Any;
 
 /// 进程常驻的嵌入式暂存实例句柄（`mem://`），与 `SUL_DB` / `SECOND_SUL_DB` 并列。
 ///

@@ -1,15 +1,15 @@
-use bevy_ecs::event::Event;
-use bevy_ecs::resource::Resource;
-use serde::Deserialize;
-use serde::Serialize;
-use serde_with::serde_as;
-use serde_with::DisplayFromStr;
-use parry3d::bounding_volume::Aabb;
-use bevy_transform::prelude::*;
 use crate::data_center::TiziVirtualHoleData;
 use crate::geometry::GeoBasicType;
-use crate::types::*;
 use crate::parsed_data::geo_params_data::PdmsGeoParam;
+use crate::types::*;
+use bevy_ecs::event::Event;
+use bevy_ecs::resource::Resource;
+use bevy_transform::prelude::*;
+use parry3d::bounding_volume::Aabb;
+use serde::Deserialize;
+use serde::Serialize;
+use serde_with::DisplayFromStr;
+use serde_with::serde_as;
 
 #[derive(Resource, PartialEq, Default, Debug, Serialize, Deserialize)]
 pub struct PersonnelInfo {
@@ -18,7 +18,6 @@ pub struct PersonnelInfo {
     #[serde(rename = "人员名称")]
     pub name: String,
 }
-
 
 #[derive(PartialEq, Resource, Default, Debug, Serialize, Deserialize)]
 pub struct PersonnelInfoVec {
@@ -82,7 +81,17 @@ pub struct HoleInstInfo {
     pub inst: Vec<HoleEleGeosInfo>,
 }
 
-#[derive(rkyv::Archive, rkyv::Deserialize, rkyv::Serialize, Serialize, Deserialize, Debug, Clone, Default, Resource)]
+#[derive(
+    rkyv::Archive,
+    rkyv::Deserialize,
+    rkyv::Serialize,
+    Serialize,
+    Deserialize,
+    Debug,
+    Clone,
+    Default,
+    Resource,
+)]
 #[serde_as]
 pub struct HoleEleGeosInfo {
     pub refno: RefU64,
@@ -108,7 +117,6 @@ pub struct HoleEleGeosInfo {
     pub geo_param: PdmsGeoParam,
 }
 
-
 //显示提资记录以及当前该记录处于哪个校核阶段
 #[derive(Resource, Serialize, Deserialize, Clone, Debug, Default)]
 pub struct ShowReviewerData {
@@ -123,7 +131,7 @@ pub struct ShowReviewerDataVec {
 }
 
 //绘制虚拟孔洞埋件需要的数据
-#[derive(Clone, Debug, Default,Serialize,Deserialize, Event)]
+#[derive(Clone, Debug, Default, Serialize, Deserialize, Event)]
 pub struct HoleGeoData {
     //图数据库的key
     pub key: String,

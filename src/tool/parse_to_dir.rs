@@ -1,6 +1,7 @@
-use crate::{eval_str_to_f64, CataContext};
+use crate::{CataContext, eval_str_to_f64};
 use anyhow::anyhow;
 use glam::{DVec3, Vec3};
+use nom::IResult;
 use nom::branch::alt;
 use nom::bytes::complete::{tag, take_until};
 use nom::character::complete::space0;
@@ -8,7 +9,6 @@ use nom::combinator::{map_res, opt, recognize};
 use nom::error::Error;
 use nom::number::complete::{double, float};
 use nom::sequence::{delimited, preceded, tuple};
-use nom::IResult;
 
 #[derive(Debug, PartialEq)]
 pub struct Coordinate {

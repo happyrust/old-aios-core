@@ -9,10 +9,12 @@ fn test_des_refno() {
     let refno: RefU64 = num_str.into();
     dbg!(refno);
     dbg!(refno.0);
-    let test_refno: RefU64 = serde_json::from_str(serde_json::to_string(&num).unwrap().as_str()).unwrap();
+    let test_refno: RefU64 =
+        serde_json::from_str(serde_json::to_string(&num).unwrap().as_str()).unwrap();
     dbg!(test_refno);
 
-    let test_refno1: RefU64 = serde_json::from_str(serde_json::to_string(&num_str).unwrap().as_str()).unwrap();
+    let test_refno1: RefU64 =
+        serde_json::from_str(serde_json::to_string(&num_str).unwrap().as_str()).unwrap();
     dbg!(test_refno1);
 
     assert_eq!(refno, test_refno);

@@ -1,4 +1,4 @@
-use crate::tool::direction_parse::{parse_expr_to_dir, parse_rotation_struct, AXISES_MAP};
+use crate::tool::direction_parse::{AXISES_MAP, parse_expr_to_dir, parse_rotation_struct};
 use anyhow::anyhow;
 use glam::{DMat3, DQuat, Mat3, Quat};
 
@@ -52,7 +52,6 @@ pub fn parse_ori_str_to_dmat3(ori_str: &str) -> anyhow::Result<DMat3> {
     }
 
     Ok(mat)
-
 }
 
 pub fn parse_ori_str_to_dquat(ori_str: &str) -> anyhow::Result<DQuat> {

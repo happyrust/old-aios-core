@@ -1,15 +1,6 @@
-use serde_derive::{Deserialize, Serialize};
-use derive_more::{Deref, DerefMut};
-use bevy_ecs::component::Component;
-use std::fmt::Debug;
-use std::fmt;
-use std::collections::BTreeMap;
-use glam::*;
-use crate::{BHashMap, RefI32Tuple, RefU64};
 use crate::cache::mgr::BytesTrait;
 use crate::consts::{ATT_CURD, ATT_STYP, UNSET_STR};
 use crate::pdms_types::*;
-use crate::types::attval::AttrVal::*;
 use crate::prim_geo::ctorus::CTorus;
 use crate::prim_geo::cylinder::SCylinder;
 use crate::prim_geo::dish::Dish;
@@ -18,11 +9,20 @@ use crate::prim_geo::rtorus::RTorus;
 use crate::prim_geo::sbox::SBox;
 use crate::prim_geo::snout::LSnout;
 use crate::prim_geo::sphere::Sphere;
+use crate::ref64vec::RefU64Vec;
 use crate::shape::pdms_shape::BrepShapeTrait;
 use crate::tool::db_tool::{db1_dehash, db1_hash, db1_hash_i32};
 use crate::tool::float_tool::{hash_f32, hash_f64_slice};
 use crate::types::attval::AttrVal;
-use crate::ref64vec::RefU64Vec;
+use crate::types::attval::AttrVal::*;
+use crate::{BHashMap, RefI32Tuple, RefU64};
+use bevy_ecs::component::Component;
+use derive_more::{Deref, DerefMut};
+use glam::*;
+use serde_derive::{Deserialize, Serialize};
+use std::collections::BTreeMap;
+use std::fmt;
+use std::fmt::Debug;
 
 ///PDMS的属性数据Map
 #[derive(
@@ -105,8 +105,8 @@ impl AttrMap {
 
     #[inline]
     pub fn into_rkyv_compress_bytes(&self) -> Vec<u8> {
-        use flate2::write::DeflateEncoder;
         use flate2::Compression;
+        use flate2::write::DeflateEncoder;
         use std::io::Write;
         let mut e = DeflateEncoder::new(Vec::new(), Compression::default());
         let _ = e.write_all(&self.into_rkyv_bytes());
@@ -133,8 +133,8 @@ impl AttrMap {
 
     #[inline]
     pub fn into_compress_bytes(&self) -> Vec<u8> {
-        use flate2::write::DeflateEncoder;
         use flate2::Compression;
+        use flate2::write::DeflateEncoder;
         use std::io::Write;
         let mut e = DeflateEncoder::new(Vec::new(), Compression::default());
         let _ = e.write_all(&self.into_bincode_bytes());
@@ -187,8 +187,9 @@ impl AttrMap {
             }
 
             //如果是土建模型 "DRNS", "DRNE"
-            if let Some(drns) = self.get_as_string("DRNS") &&
-                let Some(drne) = self.get_as_string("DRNE") {
+            if let Some(drns) = self.get_as_string("DRNS")
+                && let Some(drne) = self.get_as_string("DRNE")
+            {
                 std::hash::Hash::hash(&drns, &mut hasher);
                 std::hash::Hash::hash(&drne, &mut hasher);
                 let poss = self.get_vec3("POSS").unwrap_or_default();
@@ -686,5 +687,4 @@ impl AttrMap {
         }
         results
     }
-
 }

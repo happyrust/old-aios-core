@@ -1,13 +1,14 @@
 use crate::aios_db_mgr::aios_mgr::AiosDBMgr;
-use crate::error::{init_deserialize_error, init_query_error, HandleError};
+use crate::error::{HandleError, init_deserialize_error, init_query_error};
 use crate::noun_graph::*;
 use crate::pdms_types::{EleTreeNode, PdmsElement};
 use crate::pe::SPdmsElement;
+use crate::query_ancestor_refnos;
 use crate::ssc_setting::PbsElement;
 use crate::three_dimensional_review::ModelDataIndex;
 use crate::types::*;
-use crate::{query_types, rs_surreal, NamedAttrMap, RefU64};
-use crate::{SurlValue, SUL_DB};
+use crate::{NamedAttrMap, RefU64, query_types, rs_surreal};
+use crate::{SUL_DB, SurlValue};
 use anyhow::anyhow;
 use cached::proc_macro::cached;
 use indexmap::IndexMap;
@@ -21,7 +22,6 @@ use std::fs::{File, OpenOptions};
 use std::str::FromStr;
 use surrealdb::method::Stats;
 use surrealdb::sql::Thing;
-use crate::query_ancestor_refnos;
 
 #[inline]
 pub async fn query_filter_all_bran_hangs(refno: RefnoEnum) -> anyhow::Result<Vec<RefnoEnum>> {
@@ -37,15 +37,11 @@ pub async fn query_deep_children_refnos(refno: RefnoEnum) -> anyhow::Result<Vec<
 }
 
 #[cached(name = "QUERY_DEEP_CHILDREN_REFNOS", result = true)]
-pub async fn query_deep_children_refnos_cached(
-    refno: RefnoEnum,
-) -> anyhow::Result<Vec<RefnoEnum>> {
+pub async fn query_deep_children_refnos_cached(refno: RefnoEnum) -> anyhow::Result<Vec<RefnoEnum>> {
     query_deep_children_refnos_uncached(refno).await
 }
 
-async fn query_deep_children_refnos_uncached(
-    refno: RefnoEnum,
-) -> anyhow::Result<Vec<RefnoEnum>> {
+async fn query_deep_children_refnos_uncached(refno: RefnoEnum) -> anyhow::Result<Vec<RefnoEnum>> {
     let pe_key = refno.to_pe_key();
     let sql = if refno.is_latest() {
         format!(
@@ -208,7 +204,11 @@ pub async fn query_ele_filter_deep_children(
     let nouns_str = rs_surreal::convert_to_sql_str_array(nouns);
     let sql = format!(r#"select * from [{pe_keys}] where noun in [{nouns_str}]"#);
     // println!("sql is {}", &sql);
-    let mut response = super::staging::data_db().query(&sql).with_stats().await.unwrap();
+    let mut response = super::staging::data_db()
+        .query(&sql)
+        .with_stats()
+        .await
+        .unwrap();
     if let Some((stats, Ok(result))) = response.take::<Vec<SPdmsElement>>(0) {
         return Ok(result);
     }
@@ -429,14 +429,14 @@ pub async fn query_multi_deep_children_filter_spre(
 }
 
 /// 查询指定refno的祖先节点中符合指定类型的节点
-/// 
+///
 /// # 参数
 /// * `refno` - 要查询的refno
 /// * `nouns` - 要过滤的祖先节点类型列表
-/// 
+///
 /// # 返回值
 /// * `Vec<RefnoEnum>` - 符合指定类型的祖先节点refno列表
-/// 
+///
 /// # 错误
 /// * 如果查询失败会返回错误
 pub async fn query_filter_ancestors(
@@ -524,7 +524,9 @@ struct WallDoorResult {
 }
 
 /// 根据选择节点找到下面的wall和wall上的门
-pub async fn query_wall_doors(refno: RefU64) -> anyhow::Result<HashMap<RefU64, Vec<WallContainsDoor>>> {
+pub async fn query_wall_doors(
+    refno: RefU64,
+) -> anyhow::Result<HashMap<RefU64, Vec<WallContainsDoor>>> {
     // 找到墙
     let mut walls_q = SUL_DB
         .query(format!(

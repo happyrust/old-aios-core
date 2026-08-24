@@ -1,8 +1,8 @@
+use crate::geometry::PlantGeoData;
 use crate::types::*;
 use serde_derive::{Deserialize, Serialize};
-use serde_with::serde_as;
 use serde_with::DisplayFromStr;
-use crate::geometry::PlantGeoData;
+use serde_with::serde_as;
 
 /// rvm 格式类型
 #[derive(Debug, Clone)]
@@ -52,30 +52,76 @@ impl RvmShapeTypeData {
         let mut data = vec![];
         match &self {
             RvmShapeTypeData::Pyramid(array) => {
-                data.append(&mut format!("     {:.7}     {:.7}     {:.7}     {:.7}\r\n", array[0], array[1], array[2], array[3]).into_bytes());
-                data.append(&mut format!("     {:.7}     {:.7}     {:.7}\r\n", array[4], array[5], array[6]).into_bytes());
+                data.append(
+                    &mut format!(
+                        "     {:.7}     {:.7}     {:.7}     {:.7}\r\n",
+                        array[0], array[1], array[2], array[3]
+                    )
+                    .into_bytes(),
+                );
+                data.append(
+                    &mut format!(
+                        "     {:.7}     {:.7}     {:.7}\r\n",
+                        array[4], array[5], array[6]
+                    )
+                    .into_bytes(),
+                );
             }
             RvmShapeTypeData::Box(array) => {
-                data.append(&mut format!("     {:.7}     {:.7}     {:.7}\r\n", array[0], array[1], array[2]).into_bytes());
+                data.append(
+                    &mut format!(
+                        "     {:.7}     {:.7}     {:.7}\r\n",
+                        array[0], array[1], array[2]
+                    )
+                    .into_bytes(),
+                );
             }
             RvmShapeTypeData::RectangularTorus(array) => {
-                data.append(&mut format!("     {:.7}     {:.7}     {:.7}     {:.7}\r\n", array[0], array[1], array[2], array[3]).into_bytes());
+                data.append(
+                    &mut format!(
+                        "     {:.7}     {:.7}     {:.7}     {:.7}\r\n",
+                        array[0], array[1], array[2], array[3]
+                    )
+                    .into_bytes(),
+                );
             }
             RvmShapeTypeData::CircularTorus(array) => {
-                data.append(&mut format!("     {:.7}     {:.7}     {:.7}\r\n", array[0], array[1], array[2]).into_bytes());
+                data.append(
+                    &mut format!(
+                        "     {:.7}     {:.7}     {:.7}\r\n",
+                        array[0], array[1], array[2]
+                    )
+                    .into_bytes(),
+                );
             }
             RvmShapeTypeData::EllipticalDish(array) => {
-                data.append(&mut format!("     {:.7}     {:.7}\r\n", array[0], array[1]).into_bytes());
+                data.append(
+                    &mut format!("     {:.7}     {:.7}\r\n", array[0], array[1]).into_bytes(),
+                );
             }
             RvmShapeTypeData::SphericalDish(arr) => {
                 data.append(&mut format!("     {:.7}     {:.7}\r\n", arr[0], arr[1]).into_bytes());
             }
             RvmShapeTypeData::Snout(array) => {
-                data.append(&mut format!("     {:.7}     {:.7}     {:.7}     {:.7}     {:.7}\r\n", array[0], array[1], array[2], array[3], array[4]).into_bytes());
-                data.append(&mut format!("     {:.7}     {:.7}     {:.7}     {:.7}\r\n", array[5], array[6], array[7], array[8]).into_bytes());
+                data.append(
+                    &mut format!(
+                        "     {:.7}     {:.7}     {:.7}     {:.7}     {:.7}\r\n",
+                        array[0], array[1], array[2], array[3], array[4]
+                    )
+                    .into_bytes(),
+                );
+                data.append(
+                    &mut format!(
+                        "     {:.7}     {:.7}     {:.7}     {:.7}\r\n",
+                        array[5], array[6], array[7], array[8]
+                    )
+                    .into_bytes(),
+                );
             }
             RvmShapeTypeData::Cylinder(array) => {
-                data.append(&mut format!("     {:.7}     {:.7}\r\n", array[0], array[1]).into_bytes());
+                data.append(
+                    &mut format!("     {:.7}     {:.7}\r\n", array[0], array[1]).into_bytes(),
+                );
             }
             RvmShapeTypeData::Line(arr) => {
                 data.append(&mut format!("     {:.7}     {:.7}\r\n", arr[0], arr[1]).into_bytes());

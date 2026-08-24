@@ -1,17 +1,16 @@
-use std::collections::HashMap;
-use bevy_ecs::prelude::Resource;
-use bevy_transform::prelude::Transform;
-use serde::{Serialize, Deserialize};
 use crate::types::*;
-use serde_with::serde_as;
-use serde_with::DisplayFromStr;
 use bevy_ecs::prelude::Component;
 use bevy_ecs::prelude::Event;
-
+use bevy_ecs::prelude::Resource;
+use bevy_transform::prelude::Transform;
+use serde::{Deserialize, Serialize};
+use serde_with::DisplayFromStr;
+use serde_with::serde_as;
+use std::collections::HashMap;
 
 #[derive(Debug, Default, Clone, Serialize, Deserialize, Resource)]
 pub struct ReviewModelData {
-    #[serde(rename = "id", alias="KeyValue")]
+    #[serde(rename = "id", alias = "KeyValue")]
     pub key_value: String,
     #[serde(rename = "ProjCode")]
     pub proj_code: String,
@@ -78,7 +77,6 @@ pub struct ThreeDimensionalModelDataToArango {
     pub flow_pic_data: ThreeDimensionalReviewComment,
 }
 
-
 #[derive(Debug, Default, Clone, Serialize, Deserialize)]
 pub struct ThreeDimensionalReviewComment {
     pub validation: Vec<ThreeDimensionalReviewData>,
@@ -105,7 +103,6 @@ pub struct ModelDataIndex {
     pub name: String,
 }
 
-
 #[derive(Debug, Default, Clone, Serialize, Deserialize, Resource)]
 pub struct ModelData {
     /// 选择校审内容的节点
@@ -114,7 +111,7 @@ pub struct ModelData {
     pub data: Vec<HashMap<String, String>>,
 }
 
-#[derive(Debug, Default, Clone, Serialize, Deserialize, Eq, PartialEq,Hash)]
+#[derive(Debug, Default, Clone, Serialize, Deserialize, Eq, PartialEq, Hash)]
 pub enum VagueSearchCondition {
     #[default]
     And,
@@ -125,9 +122,9 @@ pub enum VagueSearchCondition {
 impl Into<String> for VagueSearchCondition {
     fn into(self) -> String {
         match self {
-            VagueSearchCondition::And => { "并且".to_string() }
-            VagueSearchCondition::Or => { "或者".to_string() }
-            VagueSearchCondition::Not => { "不含".to_string() }
+            VagueSearchCondition::And => "并且".to_string(),
+            VagueSearchCondition::Or => "或者".to_string(),
+            VagueSearchCondition::Not => "不含".to_string(),
         }
     }
 }
@@ -175,11 +172,10 @@ pub struct VagueSearchExportRequest {
 
 ///显示范围内所有模型
 #[derive(Clone, Debug, Default, Serialize, Deserialize, Event)]
-pub struct ShowModelInRangeEvent{
-    pub refno:RefU64,
-    pub range:f32,
+pub struct ShowModelInRangeEvent {
+    pub refno: RefU64,
+    pub range: f32,
 }
-
 
 ///编校审草图结构体
 #[derive(Debug, Resource, Default, Clone, Serialize, Deserialize)]
@@ -189,7 +185,6 @@ pub struct ReviewBluePrint {
     pub user: String,
     pub time: String,
 }
-
 
 ///得到编校审上传图纸Event
 #[derive(Clone, Debug, Default, Event, Serialize, Deserialize)]

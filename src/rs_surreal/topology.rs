@@ -1,4 +1,4 @@
-use crate::{rs_surreal::SUL_DB, RefU64};
+use crate::{RefU64, rs_surreal::SUL_DB};
 use anyhow::Result;
 use serde::{Deserialize, Serialize};
 use surrealdb::sql::Thing;
@@ -88,7 +88,7 @@ pub async fn get_next_connection(pe_id: RefU64) -> Result<NextConnection> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::{init_test_surreal, RefnoEnum};
+    use crate::{RefnoEnum, init_test_surreal};
 
     #[tokio::test]
     async fn test_get_connections() -> Result<()> {

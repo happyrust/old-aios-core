@@ -1,7 +1,6 @@
-
-use std::ops::Neg;
-use glam::{Vec3};
 use crate::parsed_data::CateAxisParam;
+use glam::Vec3;
+use std::ops::Neg;
 
 impl Neg for CateAxisParam {
     type Output = Self;
@@ -52,6 +51,4 @@ impl CateAxisParam {
             ..Default::default()
         }
     }
-
-
 }

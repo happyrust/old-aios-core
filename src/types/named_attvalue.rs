@@ -3,7 +3,7 @@ use crate::tool::float_tool::f32_round_3;
 use crate::{RefU64, RefU64Vec, SurlValue};
 use bevy_ecs::component::Component;
 use bevy_reflect::Reflect;
-use glam::{bool, f32, f64, i32, Vec3};
+use glam::{Vec3, bool, f32, f64, i32};
 use num_traits::{FromPrimitive, Num, One, Signed, ToPrimitive, Zero};
 #[cfg(feature = "sea-orm")]
 use sea_query::Value as SeaValue;
@@ -287,12 +287,8 @@ fn test_from_surreal() {
         let r = value
             .into_iter()
             .map(|x| match x.clone().record() {
-                None => {
-                    RefnoEnum::from(x.to_string().as_str())
-                }
-                Some(id) => {
-                    RefnoEnum::from(id)
-                }
+                None => RefnoEnum::from(x.to_string().as_str()),
+                Some(id) => RefnoEnum::from(id),
             })
             .collect::<Vec<_>>();
         dbg!(&r);

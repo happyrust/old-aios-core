@@ -1,7 +1,7 @@
-use std::f32::consts::PI;
 use crate::parsed_data::CateAxisParam;
 use bevy_math::prelude::{Quat, Vec3};
 use glam::{Mat3, Vec2};
+use std::f32::consts::PI;
 
 #[inline]
 pub fn cal_ref_axis(v: &Vec3) -> Vec3 {
@@ -108,7 +108,7 @@ fn ray_intersection(ray1: &Ray, ray2: &Ray, epsilon: f32) -> Option<Vec3> {
     if let Some((point1, point2)) = closest_point_between_rays(ray1, ray2, epsilon) {
         // 如果两个点足够接近，我们认为它们相交
         if (point1 - point2).length() < epsilon {
-            return Some((point1 + point2) * 0.5);  // 返回中点
+            return Some((point1 + point2) * 0.5); // 返回中点
         }
     }
     None
@@ -175,7 +175,6 @@ pub struct RotateInfo {
 }
 
 impl RotateInfo {
-
     pub fn cal_rotate_info(
         a_dir: Vec3,
         a_pt: Vec3,
@@ -226,14 +225,14 @@ impl RotateInfo {
         //将pa, pb 都变换到二维平面，然后求交点
         //如果pa, pb 平行，直接返回一个pb为基准的半圆
         // if a_dir.cross(b_dir).try_normalize().is_none(){
-        let c_dir = pb_2d.rotate(Vec2::from_angle(PI/2.0));
-        let r = if let Some(f_pt) = ray_a.intersect(&ray_b){
+        let c_dir = pb_2d.rotate(Vec2::from_angle(PI / 2.0));
+        let r = if let Some(f_pt) = ray_a.intersect(&ray_b) {
             // dbg!(f_pt);
-            let r = f_pt.length() * (PI/2.0 - angle/2.0).tan();
+            let r = f_pt.length() * (PI / 2.0 - angle / 2.0).tan();
             r
-        }else{
+        } else {
             // dbg!("not intersect");
-            ray_a.perpendicular_distance(&ray_b).unwrap_or(0.0)/2.0
+            ray_a.perpendicular_distance(&ray_b).unwrap_or(0.0) / 2.0
         };
         rotate_info.radius = r;
         rotate_info.center = b_pt + mat3 * c_dir.extend(0.0) * r;
@@ -269,7 +268,6 @@ impl RotateInfo {
         rotate_info.rot_axis = axis_z;
         rotate_info.angle = angle.to_degrees();
         //pa的点位只是 只提供方位, 位置信息是可以移动的
-
 
         let mid_pt = (a_pt + b_pt) / 2.0;
         let x_len = b_pt.distance(a_pt);
@@ -356,14 +354,13 @@ fn test_pa_axis_pos_not_corret() {
     dbg!(&info);
 }
 
-
 #[test]
 fn test_ray_intersection() {
     use glam::vec3;
     let ray1 = Ray::new(vec3(0.0, 0.0, 0.0), vec3(1.0, 0.0, 0.0));
     let ray2 = Ray::new(vec3(0.5, -1.0, 0.0), vec3(0.0, 1.0, 0.0));
 
-    let epsilon = 1e-5;  // 定义一个小的阈值
+    let epsilon = 1e-5; // 定义一个小的阈值
 
     match ray_intersection(&ray1, &ray2, epsilon) {
         Some(intersection) => println!("Rays intersect at: {:?}", intersection),

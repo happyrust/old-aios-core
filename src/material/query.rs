@@ -38,7 +38,7 @@ pub async fn save_material_data_to_mysql(
 /// 将两个不同结构的数据保存到mysql的同一张表中
 pub async fn save_two_material_data_to_mysql(
     table_name: &str,
-    chinese_name_map: &HashMap<&str,&str>,
+    chinese_name_map: &HashMap<&str, &str>,
     data_field_1: &[&str],
     data_1: Vec<HashMap<String, Value>>,
     data_field_2: &[&str],
@@ -47,7 +47,9 @@ pub async fn save_two_material_data_to_mysql(
 ) -> anyhow::Result<()> {
     // 保存到数据库
     if !data_1.is_empty() {
-        match save_material_value_test(&pool, &table_name, &data_field_1, chinese_name_map,data_1).await {
+        match save_material_value_test(&pool, &table_name, &data_field_1, chinese_name_map, data_1)
+            .await
+        {
             Ok(_) => {}
             Err(e) => {
                 dbg!(e.to_string());
@@ -55,7 +57,9 @@ pub async fn save_two_material_data_to_mysql(
         }
     }
     if !data_2.is_empty() {
-        match save_material_value_test(&pool, &table_name, data_field_2, chinese_name_map,data_2).await {
+        match save_material_value_test(&pool, &table_name, data_field_2, chinese_name_map, data_2)
+            .await
+        {
             Ok(_) => {}
             Err(e) => {
                 dbg!(e.to_string());
@@ -126,12 +130,14 @@ pub(crate) async fn save_material_value_test(
     pool: &Pool<MySql>,
     table_name: &str,
     filed: &[&str],
-    chinese_name_filed: &HashMap<&str,&str>,
+    chinese_name_filed: &HashMap<&str, &str>,
     data: Vec<HashMap<String, Value>>,
 ) -> anyhow::Result<()> {
     let mut sql = format!("INSERT IGNORE INTO `{}` (", table_name);
     for f in filed {
-        let Some(chinese) = chinese_name_filed.get(f) else { continue; };
+        let Some(chinese) = chinese_name_filed.get(f) else {
+            continue;
+        };
         sql.push_str(format!("`{}`,", chinese).as_str());
     }
     sql.remove(sql.len() - 1);
@@ -140,7 +146,10 @@ pub(crate) async fn save_material_value_test(
     for d in data {
         sql.push_str("(");
         for f in filed {
-            let value = d.get(*f).map_or("".to_string(), |x| x.to_string()).replace("\"","");
+            let value = d
+                .get(*f)
+                .map_or("".to_string(), |x| x.to_string())
+                .replace("\"", "");
             sql.push_str(format!("'{}',", value).as_str());
         }
         sql.remove(sql.len() - 1);

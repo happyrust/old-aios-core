@@ -1,12 +1,15 @@
-use std::{any::TypeId};
-use bevy_reflect::{Reflect, Struct, TypeRegistry, DynamicStruct, Typed, ReflectFromReflect, std_traits::ReflectDefault};
-use serde_with::serde_as;
-use crate::types::*;
-use serde::{Serialize, Deserialize};
-use sea_orm::{entity::prelude::*, Schema, QueryTrait, DatabaseBackend};
-use serde_with::DisplayFromStr;
-use crate::orm::traits::{DbOpTrait, ReflectDbOpTrait};
 use crate::impl_db_op_trait;
+use crate::orm::traits::{DbOpTrait, ReflectDbOpTrait};
+use crate::types::*;
+use bevy_reflect::{
+    DynamicStruct, Reflect, ReflectFromReflect, Struct, TypeRegistry, Typed,
+    std_traits::ReflectDefault,
+};
+use sea_orm::{DatabaseBackend, QueryTrait, Schema, entity::prelude::*};
+use serde::{Deserialize, Serialize};
+use serde_with::DisplayFromStr;
+use serde_with::serde_as;
+use std::any::TypeId;
 use surrealdb::sql::Thing;
 
 #[serde_as]
@@ -48,15 +51,14 @@ pub enum Relation {}
 
 impl ActiveModelBehavior for ActiveModel {}
 
-
-impl Model{
+impl Model {
     #[inline]
-    pub fn get_type_str(&self) -> &str{
-        return self.noun.as_str()
+    pub fn get_type_str(&self) -> &str {
+        return self.noun.as_str();
     }
     #[inline]
-    pub fn get_owner(&self) -> RefU64{
-        return self.owner
+    pub fn get_owner(&self) -> RefU64 {
+        return self.owner;
     }
 }
 
@@ -76,22 +78,21 @@ fn test_ele_reflect() {
     dynamic_struct.set_represented_type(Some(type_info));
     dynamic_struct.insert("name", "Test".to_string());
 
-
     let mut type_registry: TypeRegistry = TypeRegistry::default();
     type_registry.register::<Model>();
 
-     // Get type data
-     let type_id = TypeId::of::<Model>();
-     let rfr = type_registry
-         .get_type_data::<ReflectFromReflect>(type_id)
-         .expect("the FromReflect trait should be registered");
+    // Get type data
+    let type_id = TypeId::of::<Model>();
+    let rfr = type_registry
+        .get_type_data::<ReflectFromReflect>(type_id)
+        .expect("the FromReflect trait should be registered");
 
     //  // Call from_reflect
-     let mut dynamic_struct = DynamicStruct::default();
-     dynamic_struct.insert("name", "test".to_string());
-     let reflected = rfr
-         .from_reflect(&dynamic_struct)
-         .expect("the type should be properly reflected");
+    let mut dynamic_struct = DynamicStruct::default();
+    dynamic_struct.insert("name", "test".to_string());
+    let reflected = rfr
+        .from_reflect(&dynamic_struct)
+        .expect("the type should be properly reflected");
 
     let reflect_do_thing = type_registry
         .get_type_data::<ReflectDbOpTrait>(TypeId::of::<Model>())
@@ -99,8 +100,10 @@ fn test_ele_reflect() {
     let entity_trait: &dyn DbOpTrait = reflect_do_thing.get(&*reflected).unwrap();
 
     // // Which means we can now call do_thing(). Magic!
-    println!("{}", entity_trait.gen_insert_many(vec![dynamic_struct], DatabaseBackend::MySql));
+    println!(
+        "{}",
+        entity_trait.gen_insert_many(vec![dynamic_struct], DatabaseBackend::MySql)
+    );
     let create_sql = entity_trait.gen_create_table(DatabaseBackend::MySql);
     dbg!(&create_sql);
 }
-

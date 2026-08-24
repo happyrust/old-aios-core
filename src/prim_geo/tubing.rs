@@ -2,11 +2,11 @@ use crate::prim_geo::category::CateBrepShape;
 use crate::prim_geo::cylinder::SCylinder;
 use crate::prim_geo::sbox::SBox;
 use crate::prim_geo::tubing::TubiSize::{BoreSize, BoxSize};
-use crate::shape::pdms_shape::BrepShapeTrait;
 use crate::shape::pdms_shape::ANGLE_RAD_TOL;
+use crate::shape::pdms_shape::BrepShapeTrait;
 use crate::tool::dir_tool::parse_ori_str_to_quat;
 use crate::tool::direction_parse::parse_rotation_struct;
-use crate::tool::math_tool::{to_pdms_ori_str, quat_to_pdms_ori_xyz_str, to_pdms_vec_str};
+use crate::tool::math_tool::{quat_to_pdms_ori_xyz_str, to_pdms_ori_str, to_pdms_vec_str};
 use crate::types::named_attvalue::NamedAttrValue;
 use crate::types::*;
 use approx::abs_diff_eq;
@@ -15,12 +15,12 @@ use bevy_transform::prelude::Transform;
 use glam::Mat3;
 use glam::Vec3;
 use serde::{Deserialize, Serialize};
-use serde_with::serde_as;
 use serde_with::DisplayFromStr;
+use serde_with::serde_as;
 
 #[serde_as]
 #[derive(
-Debug, Clone, Serialize, Deserialize, rkyv::Archive, rkyv::Deserialize, rkyv::Serialize,
+    Debug, Clone, Serialize, Deserialize, rkyv::Archive, rkyv::Deserialize, rkyv::Serialize,
 )]
 pub struct PdmsTubing {
     #[serde(rename = "_key")]
@@ -96,16 +96,16 @@ impl TubiEdge {
 
 #[serde_as]
 #[derive(
-PartialEq,
-Default,
-Debug,
-Clone,
-Copy,
-Serialize,
-Deserialize,
-rkyv::Archive,
-rkyv::Deserialize,
-rkyv::Serialize,
+    PartialEq,
+    Default,
+    Debug,
+    Clone,
+    Copy,
+    Serialize,
+    Deserialize,
+    rkyv::Archive,
+    rkyv::Deserialize,
+    rkyv::Serialize,
 )]
 pub enum TubiSize {
     #[default]
@@ -115,12 +115,12 @@ pub enum TubiSize {
 }
 
 impl ToString for TubiSize {
-    fn to_string(&self) -> String{
+    fn to_string(&self) -> String {
         serde_json::to_string(&self.to_vec()).unwrap_or_default()
     }
 }
 
-impl TubiSize{
+impl TubiSize {
     pub fn to_vec(&self) -> Vec<f32> {
         match self {
             TubiSize::None => vec![],
@@ -143,8 +143,7 @@ impl PdmsTubing {
         let a = self.desire_leave_dir.normalize_or_zero();
         let b = -self.desire_arrive_dir.normalize_or_zero();
         let c = self.get_dir();
-        abs_diff_eq!(a.dot(c), 1.0, epsilon = 0.01)
-            && abs_diff_eq!(b.dot(c), 1.0, epsilon = 0.01)
+        abs_diff_eq!(a.dot(c), 1.0, epsilon = 0.01) && abs_diff_eq!(b.dot(c), 1.0, epsilon = 0.01)
     }
 
     /// 获得tubi的transform
@@ -167,7 +166,9 @@ impl PdmsTubing {
             _ => Vec3::ONE,
         };
         //统一都用Z轴为参考轴的方法
-        let rotation = if let Some(ref_dir) = self.leave_ref_dir && !is_bore {
+        let rotation = if let Some(ref_dir) = self.leave_ref_dir
+            && !is_bore
+        {
             let ydir = leave_dir;
             let zdir = ref_dir;
             let xdir = ydir.cross(zdir).normalize_or_zero();
@@ -180,7 +181,7 @@ impl PdmsTubing {
             if is_bore {
                 //圆柱体是以Z方向做的拉伸，后面如果要和e3d一致，还需要还原到以Y方向拉伸
                 Quat::from_rotation_arc(Vec3::Z, leave_dir)
-            }else{
+            } else {
                 Quat::from_rotation_arc(Vec3::Y, leave_dir)
             }
         };

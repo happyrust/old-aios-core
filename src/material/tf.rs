@@ -2,24 +2,22 @@
 use super::query::create_table_sql;
 #[cfg(feature = "sql")]
 use super::query::save_material_value;
+use crate::SUL_DB;
 use crate::aios_db_mgr::aios_mgr::AiosDBMgr;
 use crate::init_test_surreal;
-use crate::SUL_DB;
 use crate::{
-    get_pe, insert_into_table_with_chunks, query_ele_filter_deep_children, NamedAttrValue, RefU64,
+    NamedAttrValue, RefU64, get_pe, insert_into_table_with_chunks, query_ele_filter_deep_children,
 };
 use serde_derive::{Deserialize, Serialize};
-use serde_with::serde_as;
 use serde_with::DisplayFromStr;
+use serde_with::serde_as;
 use std::collections::HashMap;
-use surrealdb::engine::any::Any;
 use surrealdb::Surreal;
+use surrealdb::engine::any::Any;
 use tokio::task::{self, JoinHandle};
 
 /// 通风专业 风管管段
-pub async fn save_tf_material_hvac(
-    refno: RefU64,
-) -> Vec<JoinHandle<()>> {
+pub async fn save_tf_material_hvac(refno: RefU64) -> Vec<JoinHandle<()>> {
     let mut handles = Vec::new();
     let db = SUL_DB.clone();
     match get_tf_hvac_material(&db, vec![refno]).await {
@@ -463,10 +461,11 @@ pub async fn get_tf_hvac_material(
             let refnos = query_ele_filter_deep_children(
                 refno.into(),
                 &[
-                    "BEND", "BRCO", "CAP", "FLEX", "OFST", "STIF", "STRT", "TAPE", "THRE", "TRNS","TEE"
+                    "BEND", "BRCO", "CAP", "FLEX", "OFST", "STIF", "STRT", "TAPE", "THRE", "TRNS",
+                    "TEE",
                 ],
             )
-                .await?;
+            .await?;
             // STRT
             let strts = refnos
                 .iter()
@@ -704,7 +703,8 @@ fn change_hvac_result_to_map(
             map.entry(chinese.to_string())
                 .or_insert(v.get_val_as_string());
         }
-        map.entry("version_tag".to_string()).or_insert("".to_string());
+        map.entry("version_tag".to_string())
+            .or_insert("".to_string());
         result.push(map);
     }
     result
@@ -713,8 +713,7 @@ fn change_hvac_result_to_map(
 /// 获取通风材料表单字段对应的中文名
 fn get_hvac_chinese_name_map() -> HashMap<String, String> {
     let mut map = HashMap::new();
-    map.entry("id".to_string())
-        .or_insert("参考号".to_string());
+    map.entry("id".to_string()).or_insert("参考号".to_string());
 
     // map.entry("desc".to_string())
     //     .or_insert("描述".to_string());
@@ -734,20 +733,15 @@ fn get_hvac_chinese_name_map() -> HashMap<String, String> {
     // map.entry("l".to_string())
     //     .or_insert("风管长度".to_string());
 
-    map.entry("w".to_string())
-        .or_insert("风管宽度".to_string());
+    map.entry("w".to_string()).or_insert("风管宽度".to_string());
 
-    map.entry("h".to_string())
-        .or_insert("风管高度".to_string());
+    map.entry("h".to_string()).or_insert("风管高度".to_string());
 
-    map.entry("x".to_string())
-        .or_insert("坐标X".to_string());
+    map.entry("x".to_string()).or_insert("坐标X".to_string());
 
-    map.entry("y".to_string())
-        .or_insert("坐标Y".to_string());
+    map.entry("y".to_string()).or_insert("坐标Y".to_string());
 
-    map.entry("z".to_string())
-        .or_insert("坐标Z".to_string());
+    map.entry("z".to_string()).or_insert("坐标Z".to_string());
 
     map.entry("thickness".to_string())
         .or_insert("风管壁厚".to_string());
@@ -791,8 +785,7 @@ fn get_hvac_chinese_name_map() -> HashMap<String, String> {
     map.entry("other_material_count".to_string())
         .or_insert("其它材料数量".to_string());
 
-    map.entry("screw".to_string())
-        .or_insert("螺杆".to_string());
+    map.entry("screw".to_string()).or_insert("螺杆".to_string());
 
     map.entry("nut_count".to_string())
         .or_insert("螺母数量".to_string());
@@ -852,10 +845,7 @@ async fn get_tf_hvac_trns_data(
         .map(|refno| refno.to_pe_key())
         .collect::<Vec<_>>()
         .join(",");
-    let sql = format!(
-        "return fn::fggd_TRNS([{}]);",
-        refnos
-    );
+    let sql = format!("return fn::fggd_TRNS([{}]);", refnos);
     let mut response = db.query(&sql).await?;
     match response.take::<Vec<HashMap<String, NamedAttrValue>>>(0) {
         Ok(result) => {
@@ -884,10 +874,7 @@ async fn get_tf_hvac_brco_data(
         .map(|refno| refno.to_pe_key())
         .collect::<Vec<_>>()
         .join(",");
-    let sql = format!(
-        "return fn::fggd_BRCO([{}]);",
-        refnos
-    );
+    let sql = format!("return fn::fggd_BRCO([{}]);", refnos);
     let mut response = db.query(&sql).await?;
     match response.take::<Vec<HashMap<String, NamedAttrValue>>>(0) {
         Ok(result) => {
@@ -916,10 +903,7 @@ async fn get_tf_hvac_thre_data(
         .map(|refno| refno.to_pe_key())
         .collect::<Vec<_>>()
         .join(",");
-    let sql = format!(
-        "return fn::fggd_THRE([{}]);",
-        refnos
-    );
+    let sql = format!("return fn::fggd_THRE([{}]);", refnos);
     let mut response = db.query(&sql).await?;
     match response.take::<Vec<HashMap<String, NamedAttrValue>>>(0) {
         Ok(result) => {
@@ -948,10 +932,7 @@ async fn get_tf_hvac_tee_data(
         .map(|refno| refno.to_pe_key())
         .collect::<Vec<_>>()
         .join(",");
-    let sql = format!(
-        "return fn::fggd_tee([{}]);",
-        refnos
-    );
+    let sql = format!("return fn::fggd_tee([{}]);", refnos);
     let mut response = db.query(&sql).await?;
     match response.take::<Vec<HashMap<String, NamedAttrValue>>>(0) {
         Ok(result) => {
@@ -980,10 +961,7 @@ async fn get_tf_hvac_cap_data(
         .map(|refno| refno.to_pe_key())
         .collect::<Vec<_>>()
         .join(",");
-    let sql = format!(
-        "return fn::fggd_CAP([{}]);",
-        refnos
-    );
+    let sql = format!("return fn::fggd_CAP([{}]);", refnos);
     let mut response = db.query(&sql).await?;
     match response.take::<Vec<HashMap<String, NamedAttrValue>>>(0) {
         Ok(result) => {
@@ -1012,10 +990,7 @@ async fn get_tf_hvac_stif_data(
         .map(|refno| refno.to_pe_key())
         .collect::<Vec<_>>()
         .join(",");
-    let sql = format!(
-        "return fn::fggd_STIF([{}]);",
-        refnos
-    );
+    let sql = format!("return fn::fggd_STIF([{}]);", refnos);
     let mut response = db.query(&sql).await?;
     match response.take::<Vec<HashMap<String, NamedAttrValue>>>(0) {
         Ok(result) => {
@@ -1030,7 +1005,6 @@ async fn get_tf_hvac_stif_data(
     Ok(data)
 }
 
-
 /// 声明通风专业定义的方法
 pub async fn define_tf_surreal_functions(db: &Surreal<Any>) -> anyhow::Result<()> {
     let path = "rs_surreal/material_list/tf";
@@ -1038,7 +1012,13 @@ pub async fn define_tf_surreal_functions(db: &Surreal<Any>) -> anyhow::Result<()
     for file in files {
         let file = file?;
         let path = file.path();
-        if !path.file_name().unwrap().to_str().unwrap().ends_with(".surql") {
+        if !path
+            .file_name()
+            .unwrap()
+            .to_str()
+            .unwrap()
+            .ends_with(".surql")
+        {
             continue;
         }
         let content = std::fs::read_to_string(path)?;
@@ -1052,4 +1032,3 @@ async fn test_define_tf_surreal_functions() {
     init_test_surreal().await;
     define_tf_surreal_functions(&SUL_DB).await.unwrap();
 }
-

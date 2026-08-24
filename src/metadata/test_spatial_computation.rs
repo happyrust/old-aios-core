@@ -1,5 +1,5 @@
 use crate::metadata::spatial_computation::*;
-use crate::{init_test_surreal, RefU64, RefnoEnum};
+use crate::{RefU64, RefnoEnum, init_test_surreal};
 use glam::Vec3;
 use std::str::FromStr;
 

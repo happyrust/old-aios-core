@@ -3,14 +3,14 @@ use crate::pe::SPdmsElement;
 use crate::tool::db_tool::{db1_dehash, get_uda_index, is_uda};
 use crate::types::*;
 use crate::{NamedAttrMap, RefU64};
-use crate::{SurlValue, SUL_DB};
+use crate::{SUL_DB, SurlValue};
 use cached::proc_macro::cached;
 use indexmap::IndexMap;
 use serde::{Deserialize, Serialize};
-use surrealdb::sql::Thing;
 use std::collections::{BTreeMap, HashMap};
 use std::f32::consts::E;
 use std::sync::Mutex;
+use surrealdb::sql::Thing;
 
 #[cached]
 pub async fn get_uda_refno(hash: i32) -> Option<RefU64> {
@@ -53,9 +53,8 @@ pub async fn get_uda_type(hash: i32) -> Option<String> {
     get_uda_prop_as_string(hash, "UTYP".to_string()).await
 }
 
-
 #[cached]
-pub async fn get_uda_prop_as_string(hash: i32, prop: String) -> Option<String>{
+pub async fn get_uda_prop_as_string(hash: i32, prop: String) -> Option<String> {
     if !is_uda(hash as _) {
         return None;
     }
@@ -71,7 +70,8 @@ pub async fn get_uda_prop_as_string(hash: i32, prop: String) -> Option<String>{
         }} else {{
             return (select value {0} from (select * from UDA where string::contains(UDNA, '{name}') order by UKEY))[{index}];
         }};
-        "#, &prop
+        "#,
+        &prop
     );
     // println!("get_uda_prop_as_string: {}", sql);
     if let Ok(mut response) = SUL_DB
@@ -79,7 +79,8 @@ pub async fn get_uda_prop_as_string(hash: i32, prop: String) -> Option<String>{
         // .bind(("key", hash))
         // .bind(("name", name))
         // .bind(("i", index.unwrap_or_default()))
-        .await {
+        .await
+    {
         let result: Option<String> = response.take(1).ok()?;
         return result;
     }

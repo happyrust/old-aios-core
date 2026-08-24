@@ -1,9 +1,9 @@
+use crate::data_center::RawHoleData;
 use bevy_ecs::prelude::Resource;
 use glam::Vec3;
+use nom::character::streaming::char;
 use serde_derive::{Deserialize, Serialize};
 use std::collections::HashMap;
-use nom::character::streaming::char;
-use crate::data_center::RawHoleData;
 
 //显示需创建ATTA的refno及name
 #[derive(Default, Clone, Debug, Serialize, Deserialize)]
@@ -383,7 +383,6 @@ impl VirtualHoleGraphNodeJSStatus {
     }
 }
 
-
 //存储虚拟孔洞detail
 #[derive(Resource, Serialize, Deserialize, Clone, Debug, Default)]
 pub struct VirtualHoleHistoryData {
@@ -395,7 +394,6 @@ pub struct VirtualHoleHistoryData {
 pub struct VirtualEmbedHistoryData {
     pub data: VirtualEmbedGraphNodeQuery,
 }
-
 
 //存储校核人虚拟孔洞detail
 #[derive(Resource, Serialize, Deserialize, Clone, Debug, Default)]

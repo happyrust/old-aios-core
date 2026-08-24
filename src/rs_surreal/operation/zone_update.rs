@@ -16,15 +16,15 @@ pub async fn update_missing_zone_refno() -> Result<usize> {
         SELECT count() FROM inst_relate 
         WHERE zone_refno = NONE AND in != NONE;
     "#;
-    
+
     let mut count_response = SUL_DB.query(count_sql).await?;
     let count_result: Vec<CountResult> = count_response.take(0)?;
     let record_count = count_result.first().map(|r| r.count).unwrap_or(0);
-    
+
     if record_count == 0 {
         return Ok(0);
     }
-    
+
     // Then, update the records
     let update_sql = r#"
         LET $missing_zone_records = SELECT id, in FROM inst_relate 
@@ -38,8 +38,8 @@ pub async fn update_missing_zone_refno() -> Result<usize> {
             }
         }
     "#;
-    
+
     SUL_DB.query(update_sql).await?;
-    
+
     Ok(record_count)
-} 
+}

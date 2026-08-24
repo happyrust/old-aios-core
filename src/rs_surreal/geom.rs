@@ -1,9 +1,9 @@
+use crate::SurlValue;
 use crate::pdms_pluggin::heat_dissipation::InstPointMap;
 use crate::pe::SPdmsElement;
+use crate::{NamedAttrMap, RefnoEnum};
 use crate::{init_test_surreal, query_filter_deep_children, types::*};
 use crate::{pdms_types::*, to_table_key, to_table_keys};
-use crate::{NamedAttrMap, RefnoEnum};
-use crate::SurlValue;
 use bevy_transform::components::Transform;
 use cached::proc_macro::cached;
 use glam::Vec3;
@@ -141,9 +141,13 @@ pub async fn query_refno_has_pos_neg_map(
     }
     //使用SUL_DB通过这些参考号反过来query查找父节点
     let sql = format!(
-         "select pos, array::group(id) as negs from (select $this.id as id, array::first(->pe_owner.out) as pos from [{}]) group pos",
-         refnos.iter().map(|x| x.to_pe_key()).collect::<Vec<_>>().join(","),
-     );
+        "select pos, array::group(id) as negs from (select $this.id as id, array::first(->pe_owner.out) as pos from [{}]) group pos",
+        refnos
+            .iter()
+            .map(|x| x.to_pe_key())
+            .collect::<Vec<_>>()
+            .join(","),
+    );
     // println!("query_refno_has_pos_neg_map sql is {}", &sql);
     let mut response = super::staging::data_db().query(&sql).await?;
     let mut result = HashMap::new();

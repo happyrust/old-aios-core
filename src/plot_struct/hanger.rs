@@ -1,5 +1,5 @@
 use crate::types::*;
-use serde::{Serialize, Deserialize};
+use serde::{Deserialize, Serialize};
 
 /// 支吊架出图所需的所有数据
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]

@@ -1,10 +1,10 @@
-use std::vec::IntoIter;
-use serde_with::serde_as;
-use serde_derive::{Deserialize, Serialize};
+use crate::cache::mgr::BytesTrait;
+use crate::{RefU64, query_refno_sesno};
 use bevy_ecs::component::Component;
 use derive_more::{Deref, DerefMut};
-use crate::cache::mgr::BytesTrait;
-use crate::{query_refno_sesno, RefU64};
+use serde_derive::{Deserialize, Serialize};
+use serde_with::serde_as;
+use std::vec::IntoIter;
 
 #[serde_as]
 #[derive(
@@ -22,10 +22,7 @@ use crate::{query_refno_sesno, RefU64};
 )]
 pub struct RefU64Vec(pub Vec<RefU64>);
 
-
-impl RefU64Vec {
-   
-}
+impl RefU64Vec {}
 
 impl BytesTrait for RefU64Vec {}
 

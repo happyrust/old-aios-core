@@ -1,6 +1,6 @@
 use glam::Vec3;
 
-use crate::{query_neareast_along_axis, RefU64, RefnoEnum, SUL_DB};
+use crate::{RefU64, RefnoEnum, SUL_DB, query_neareast_along_axis};
 
 /// Create the relations between the valves and the floors
 pub async fn cal_valve_nearest_floor() -> anyhow::Result<()> {
@@ -9,7 +9,7 @@ pub async fn cal_valve_nearest_floor() -> anyhow::Result<()> {
     loop {
         //需要过滤
         //为了测试，暂时只取两个 db 1112 7999
-        //where REFNO.dbnum in [1112, 7999] 
+        //where REFNO.dbnum in [1112, 7999]
         let sql = format!(
             "select value REFNO from VALV where array::len(REFNO->nearest_relate)=0 start {} limit {page_count}",
             offset
@@ -22,10 +22,15 @@ pub async fn cal_valve_nearest_floor() -> anyhow::Result<()> {
         // dbg!(refnos.len());
         let mut sqls = vec![];
         for refno in refnos {
-            if let Ok(Some((nearest, dist))) = query_neareast_along_axis(refno, Vec3::NEG_Z, "FLOOR")
-                .await{
+            if let Ok(Some((nearest, dist))) =
+                query_neareast_along_axis(refno, Vec3::NEG_Z, "FLOOR").await
+            {
                 // dbg!((refno, nearest, dist));
-                sqls.push(format!("relate {}->nearest_relate->FLOOR:{} set dist={dist};", refno.to_pe_key(), nearest.to_string()));
+                sqls.push(format!(
+                    "relate {}->nearest_relate->FLOOR:{} set dist={dist};",
+                    refno.to_pe_key(),
+                    nearest.to_string()
+                ));
             }
         }
         //保存到 SUL_DB

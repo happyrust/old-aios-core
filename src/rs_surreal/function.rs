@@ -1,11 +1,11 @@
-use crate::{NamedAttrMap, RefU64, SurlValue, SUL_DB};
+use crate::{NamedAttrMap, RefU64, SUL_DB, SurlValue};
 use anyhow::Context;
 use cached::proc_macro::cached;
 use std::io::Read;
 use std::path::PathBuf;
 use surrealdb::Connection;
-use surrealdb::engine::any::Any;
 use surrealdb::Surreal;
+use surrealdb::engine::any::Any;
 
 const REFNO_U64_DEFINE: &str = r#"
 DEFINE FUNCTION OVERWRITE fn::refno_u64($r: record) {
@@ -54,7 +54,10 @@ pub async fn define_common_functions_on(db: &Surreal<Any>) -> anyhow::Result<()>
         .collect::<Result<Vec<PathBuf>, _>>()?;
     target_dir.sort();
     for file in target_dir {
-        println!("载入surreal {}",file.file_name().unwrap().to_str().unwrap().to_string());
+        println!(
+            "载入surreal {}",
+            file.file_name().unwrap().to_str().unwrap().to_string()
+        );
         let mut file = std::fs::File::open(file)?;
         let mut content = String::new();
         file.read_to_string(&mut content)?;
@@ -103,9 +106,7 @@ async fn define_checked<C: Connection>(
 /// Existing definitions are never overwritten. Missing definitions are loaded
 /// from SQL compiled into `aios_core`, so an old deployment copy of
 /// `resource/surreal/common.surql` cannot make DESI finalization fail later.
-pub async fn ensure_inst_meta_functions_on<C: Connection>(
-    db: &Surreal<C>,
-) -> anyhow::Result<bool> {
+pub async fn ensure_inst_meta_functions_on<C: Connection>(db: &Surreal<C>) -> anyhow::Result<bool> {
     let refno_probe = "RETURN fn::refno_u64(type::thing('pe','1_1'));";
     let anc_probe = "RETURN fn::anc_u64(type::thing('pe','1_1'));";
     let mut installed = false;
@@ -219,27 +220,25 @@ mod inst_meta_compat_tests {
     #[tokio::test]
     async fn checked_define_surfaces_statement_errors() {
         let db = mem_db("invalid_definition").await;
-        let error = define_checked(
-            &db,
-            "fn::broken",
-            "THROW 'broken embedded definition';",
-        )
-        .await
-        .expect_err("invalid embedded definition must fail during loading");
+        let error = define_checked(&db, "fn::broken", "THROW 'broken embedded definition';")
+            .await
+            .expect_err("invalid embedded definition must fail during loading");
 
         assert!(
-            error.to_string().contains("当前 SurrealDB 拒绝内置 fn::broken 定义"),
+            error
+                .to_string()
+                .contains("当前 SurrealDB 拒绝内置 fn::broken 定义"),
             "unexpected error: {error:#}"
         );
     }
 }
 
 /// 定义数据库编号事件
-/// 
+///
 /// 当创建新的 pe 记录时,会触发此事件来更新 dbnum_info_table 表中的信息
-/// 
+///
 /// # 错误
-/// 
+///
 /// 如果数据库操作失败,将返回错误
 pub async fn define_dbnum_event() -> anyhow::Result<()> {
     define_dbnum_event_on(&SUL_DB).await

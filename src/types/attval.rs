@@ -1,11 +1,11 @@
-use serde_derive::{Deserialize, Serialize};
-use bevy_ecs::component::Component;
-use glam::{bool, f32, f64, i32, Vec3};
-use bevy_reflect::Reflect;
+use crate::RefU64;
 use crate::attval::AttrVal::*;
 use crate::pdms_types::AiosStrHash;
 use crate::ref64vec::RefU64Vec;
-use crate::RefU64;
+use bevy_ecs::component::Component;
+use bevy_reflect::Reflect;
+use glam::{Vec3, bool, f32, f64, i32};
+use serde_derive::{Deserialize, Serialize};
 
 #[derive(
     Default,

@@ -13,8 +13,8 @@ use crate::tool::math_tool::*;
 use crate::types::attmap::AttrMap;
 use crate::types::named_attvalue::NamedAttrValue;
 use crate::{
-    cal_ori_by_extru_axis, cal_ori_by_z_axis_ref_x, cal_ori_by_z_axis_ref_y,
-    get_default_pdms_db_info, AttrVal, RefI32Tuple, RefU64, SurlStrand, SurlValue,
+    AttrVal, RefI32Tuple, RefU64, SurlStrand, SurlValue, cal_ori_by_extru_axis,
+    cal_ori_by_z_axis_ref_x, cal_ori_by_z_axis_ref_y, get_default_pdms_db_info,
 };
 use crate::{pdms_types::*, query_refno_sesno};
 use bevy_ecs::component::Component;
@@ -138,7 +138,7 @@ impl From<SurlValue> for NamedAttrMap {
                                 let named_value = match &v {
                                     SurlValue::Strand(s) => NamedAttrValue::WordType(s.to_string()),
                                     SurlValue::Number(i) => NamedAttrValue::WordType(db1_dehash(
-                                        v.try_into().unwrap_or_default()
+                                        v.try_into().unwrap_or_default(),
                                     )),
                                     _ => NamedAttrValue::WordType("".to_string()), // Default case if type is unexpected
                                 };
@@ -656,11 +656,11 @@ impl NamedAttrMap {
     }
 
     /// 根据会话号生成sur json字符串
-    /// 
+    ///
     /// # 参数
     /// * `sesno` - 会话号
     /// * `sesno_map` - RefU64到会话号的映射表
-    /// 
+    ///
     /// # 返回值
     /// * `Option<String>` - 生成的sur json字符串,如果生成失败则返回None
     pub fn gen_sur_json_with_sesno(
@@ -757,11 +757,11 @@ impl NamedAttrMap {
     }
 
     /// 生成排除指定字段的JSON字符串
-    /// 
+    ///
     /// # 参数
     /// * `excludes` - 需要排除的字段名数组
     /// * `id` - 可选的ID字符串,如果不提供则使用refno作为ID
-    /// 
+    ///
     /// # 返回值
     /// * `Option<String>` - 成功则返回JSON字符串,失败返回None
     pub fn gen_sur_json_exclude(&self, excludes: &[&str], id: Option<String>) -> Option<String> {

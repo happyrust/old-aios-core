@@ -1,12 +1,12 @@
-use crate::pdms_types::{EleOperation, PdmsElement};
+use super::RefnoEnum;
 use crate::RefU64;
+use crate::pdms_types::{EleOperation, PdmsElement};
 use bevy_ecs::resource::Resource;
 use serde::{Deserialize, Serialize};
 use serde_json::{json, to_string_pretty};
 use serde_with::DisplayFromStr;
 use std::fmt::format;
 use surrealdb::sql::Thing;
-use super::RefnoEnum;
 
 #[derive(Serialize, Deserialize, Clone, Debug, Resource, Default, PartialEq)]
 pub struct SPdmsElement {
@@ -32,7 +32,6 @@ pub struct SPdmsElement {
 }
 
 impl SPdmsElement {
-
     #[inline]
     pub fn refno(&self) -> RefU64 {
         self.refno.refno()
@@ -86,13 +85,16 @@ impl SPdmsElement {
         json_string.push_str(",");
         json_string.push_str(&format!(
             r#""refno": {}_H:['{}',{}], "#,
-            &self.noun, self.refno(), sesno
+            &self.noun,
+            self.refno(),
+            sesno
         ));
         json_string.push_str(&format!(r#""id": ['{}',{}],"#, self.refno(), sesno));
         if owner_sesno != 0 {
             json_string.push_str(&format!(
                 r#""owner": pe:['{}',{}]"#,
-                self.owner.refno(), owner_sesno
+                self.owner.refno(),
+                owner_sesno
             ));
         } else {
             json_string.push_str(&format!(r#""owner": {}"#, self.owner.to_pe_key()));

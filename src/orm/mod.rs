@@ -1,26 +1,26 @@
-pub mod pdms_element;
-pub mod log_data;
 pub mod diff_data;
+pub mod log_data;
+pub mod pdms_element;
 // pub mod entities;
 
-pub mod types;
 pub mod sql;
 pub mod traits;
+pub mod types;
 #[macro_use]
 pub mod macros;
 
 // pub mod generated;
 // pub use generated::*;
 
-use std::any::TypeId;
-use std::collections::BTreeMap;
 use bevy_reflect::TypeRegistry;
 use once_cell::sync::OnceCell;
+use std::any::TypeId;
+use std::collections::BTreeMap;
 
 // pub use entities::*;
-pub use types::*;
-pub use traits::*;
 pub use macros::*;
+pub use traits::*;
+pub use types::*;
 
 ///获得类型的注册机
 pub fn get_type_registry() -> &'static TypeRegistry {
@@ -31,7 +31,6 @@ pub fn get_type_registry() -> &'static TypeRegistry {
         type_registry
     })
 }
-
 
 //todo 根据属性描述信息，使用宏来生成类型信息
 
@@ -45,7 +44,6 @@ pub fn get_type_name_cache() -> &'static OrmTypeNameCache {
     })
 }
 
-
 #[derive(Default, Clone, Debug)]
 pub struct OrmTypeNameCache {
     id_map: BTreeMap<&'static str, TypeId>,
@@ -54,7 +52,10 @@ pub struct OrmTypeNameCache {
 impl OrmTypeNameCache {
     pub fn type_id_of<T: 'static>(&mut self) -> TypeId {
         let id = TypeId::of::<T>();
-        let names = std::any::type_name::<T>().split("::").into_iter().collect::<Vec<_>>();
+        let names = std::any::type_name::<T>()
+            .split("::")
+            .into_iter()
+            .collect::<Vec<_>>();
         let name = names[names.len() - 2];
         self.id_map.insert(name, id);
         id

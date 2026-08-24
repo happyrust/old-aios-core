@@ -1,8 +1,8 @@
 use crate::pdms_types::EleTreeNode;
 use crate::pe::SPdmsElement;
-use crate::{get_db_option, helper, types::*};
 use crate::{NamedAttrMap, RefnoEnum};
-use crate::{SurlValue, SUL_DB};
+use crate::{SUL_DB, SurlValue};
+use crate::{get_db_option, helper, types::*};
 use cached::proc_macro::cached;
 use indexmap::IndexMap;
 use itertools::Itertools;
@@ -133,10 +133,14 @@ pub async fn query_type_refnos_by_dbnum(
         };
         let sql = match has_children {
             Some(true) => {
-                format!("select value id from {table} where REFNO.dbnum={dbnum} and (REFNO<-pe_owner.in)[0] != none")
+                format!(
+                    "select value id from {table} where REFNO.dbnum={dbnum} and (REFNO<-pe_owner.in)[0] != none"
+                )
             }
             Some(false) => {
-                format!("select value id from {table} where REFNO.dbnum={dbnum} and (REFNO<-pe_owner.in)[0] == none")
+                format!(
+                    "select value id from {table} where REFNO.dbnum={dbnum} and (REFNO<-pe_owner.in)[0] == none"
+                )
             }
             None => {
                 format!("select value id from {table} where REFNO.dbnum={dbnum}")
@@ -163,8 +167,9 @@ pub async fn query_use_cate_refnos_by_dbnum(
         } else {
             format!("{noun}")
         };
-        let sql =
-            format!("select value id from {table} where REFNO.dbnum={dbnum} and (SPRE != none or CATR != none)");
+        let sql = format!(
+            "select value id from {table} where REFNO.dbnum={dbnum} and (SPRE != none or CATR != none)"
+        );
         let mut response = SUL_DB.query(&sql).await?;
         let refnos: Vec<RefnoEnum> = response.take(0)?;
         result.extend(refnos);

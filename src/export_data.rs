@@ -1,13 +1,14 @@
 use crate::{
-    aios_db_mgr::{aios_mgr::AiosDBMgr, PdmsDataInterface},
+    NamedAttrMap, NamedAttrValue, RefU64, RefnoEnum, SUL_DB,
+    aios_db_mgr::{PdmsDataInterface, aios_mgr::AiosDBMgr},
     geometry::EleGeosInfo,
     get_pe, init_test_surreal,
     pe::SPdmsElement,
-    query_deep_children_refnos, NamedAttrMap, NamedAttrValue, RefU64, RefnoEnum, SUL_DB,
+    query_deep_children_refnos,
 };
 use anyhow::anyhow;
 use serde::{Deserialize, Serialize};
-use std::collections::{btree_map::BTreeMap, HashSet};
+use std::collections::{HashSet, btree_map::BTreeMap};
 use std::io::Write;
 use surrealdb::sql::{Datetime, Thing};
 
@@ -91,7 +92,10 @@ pub async fn export_surreal_data(
                     // 导出geo_relate
                     let geo_relates = GeoRelate::query_by_inst_info_id(&relate.out).await?;
                     for geo_rel in geo_relates {
-                        meshes.insert(format!("{}.mesh",geo_rel.out.id.to_string().replace("⟨", "").replace("⟩", "")));
+                        meshes.insert(format!(
+                            "{}.mesh",
+                            geo_rel.out.id.to_string().replace("⟨", "").replace("⟩", "")
+                        ));
                         // 导出 geo_relate 本体
                         let geo_sql = export_geo_relate(&geo_rel);
                         sqls.push(geo_sql);
@@ -475,9 +479,9 @@ async fn get_inst_data(refno: &SPdmsElement, mut sqls: &mut Vec<String>) -> anyh
                 format!("[{}]", s)
             };
             format!(
-        "INSERT IGNORE INTO tubi_relate {{ id: {}, in: {}, out: {}, aabb: {}, world_trans: {}, arrive: {}, leave: {}, bore_size: {} }};",
-        rel.id, rel.r#in, rel.out, rel.aabb, rel.world_trans, rel.arrive, rel.leave, bore
-    )
+                "INSERT IGNORE INTO tubi_relate {{ id: {}, in: {}, out: {}, aabb: {}, world_trans: {}, arrive: {}, leave: {}, bore_size: {} }};",
+                rel.id, rel.r#in, rel.out, rel.aabb, rel.world_trans, rel.arrive, rel.leave, bore
+            )
         }
     }
     Ok(())
@@ -540,17 +544,17 @@ impl InstRelate {
 
 fn export_inst_relate(relate: InstRelate) -> String {
     format!(
-            "INSERT RELATION INTO inst_relate {{ id: {}, in: {}, out: {}, aabb: {}, world_trans: {}, generic: \"{}\", has_cata_neg: {}, solid: {}, dt: {} }};",
-            relate.id.clone(),
-            relate.r#in,
-            relate.out,
-            relate.aabb.unwrap_or(relate.id),
-            relate.world_trans,
-            relate.generic,
-            relate.has_cata_neg,
-            relate.solid,
-            relate.dt.unwrap_or(Datetime::default())
-        )
+        "INSERT RELATION INTO inst_relate {{ id: {}, in: {}, out: {}, aabb: {}, world_trans: {}, generic: \"{}\", has_cata_neg: {}, solid: {}, dt: {} }};",
+        relate.id.clone(),
+        relate.r#in,
+        relate.out,
+        relate.aabb.unwrap_or(relate.id),
+        relate.world_trans,
+        relate.generic,
+        relate.has_cata_neg,
+        relate.solid,
+        relate.dt.unwrap_or(Datetime::default())
+    )
 }
 
 #[derive(Serialize, Deserialize, Clone, Debug)]
@@ -786,7 +790,7 @@ async fn test_export_surreal_data() {
     let aios_mgr = AiosDBMgr::init_from_db_option().await.unwrap();
 
     // 测试导出功能
-    let (sqls,_) = export_surreal_data(test_refno, &aios_mgr).await.unwrap();
+    let (sqls, _) = export_surreal_data(test_refno, &aios_mgr).await.unwrap();
     let sqls = sqls.join(";").into_bytes();
     // 生成sql文件
     let file_name = format!("{}_{}.txt", test_refno.get_0(), test_refno.get_1());

@@ -1,10 +1,18 @@
-use rkyv::{ser::serializers::AllocSerializer, Serialize};
+use rkyv::{Serialize, ser::serializers::AllocSerializer};
 
 pub fn gen_bytes_hash<T, const N: usize>(v: &T) -> u64
 where
-    T: Serialize<AllocSerializer<N>> + rkyv::Serialize<rkyv::ser::serializers::CompositeSerializer<rkyv::ser::serializers::AlignedSerializer<rkyv::AlignedVec>,
-        rkyv::ser::serializers::FallbackScratch<rkyv::ser::serializers::HeapScratch<512>,
-            rkyv::ser::serializers::AllocScratch>, rkyv::ser::serializers::SharedSerializeMap>>
+    T: Serialize<AllocSerializer<N>>
+        + rkyv::Serialize<
+            rkyv::ser::serializers::CompositeSerializer<
+                rkyv::ser::serializers::AlignedSerializer<rkyv::AlignedVec>,
+                rkyv::ser::serializers::FallbackScratch<
+                    rkyv::ser::serializers::HeapScratch<512>,
+                    rkyv::ser::serializers::AllocScratch,
+                >,
+                rkyv::ser::serializers::SharedSerializeMap,
+            >,
+        >,
 {
     use core::hash::Hasher;
 

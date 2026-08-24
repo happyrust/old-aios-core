@@ -12,4 +12,3 @@ pub fn convert_str_to_bytes(data_str: &str) -> Vec<u8> {
         .map(|s| u8::from_str_radix(s, 16).unwrap())
         .collect()
 }
-

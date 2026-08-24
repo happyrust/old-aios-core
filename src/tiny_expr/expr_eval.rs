@@ -21,13 +21,13 @@
 //!```
 
 // use error::Result;
+use crate::tiny_expr::error;
+use crate::tiny_expr::error::*;
+use bitflags::bitflags;
+use derivative::Derivative;
 use phf::phf_map;
 use std::f64::consts;
 use std::str::FromStr;
-use bitflags::bitflags;
-use crate::tiny_expr::error::*;
-use crate::tiny_expr::error;
-use derivative::Derivative;
 
 #[doc(hidden)]
 bitflags! {
@@ -204,7 +204,7 @@ fn atan2(a: f64, b: f64) -> f64 {
     a.atan2(b).to_degrees()
 }
 fn atant(a: f64, b: f64) -> f64 {
-    (a/b).atan().to_degrees()
+    (a / b).atan().to_degrees()
 }
 fn ceil(a: f64, _: f64) -> f64 {
     a.ceil()
@@ -574,8 +574,7 @@ fn base(s: &mut State) -> Result<Expr> {
 fn power(s: &mut State) -> Result<Expr> {
     let mut sign = 1;
 
-    if s.function_type == FunctionType::Add ||
-        s.function_type == FunctionType::Sub {
+    if s.function_type == FunctionType::Add || s.function_type == FunctionType::Sub {
         while s.s_type == Flags::TOK_INFIX {
             match s.function_type {
                 FunctionType::Add => sign = 1,

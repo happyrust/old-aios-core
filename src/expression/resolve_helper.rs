@@ -1,15 +1,15 @@
-use std::{mem, panic};
-use std::collections::HashMap;
-use crate::parsed_data::*;
+use crate::expression::resolve::resolve_axis_param;
 use crate::parsed_data::geo_params_data::CateGeoParam;
+use crate::parsed_data::*;
 use crate::pdms_data::{AxisParam, ScomInfo};
+use crate::tool::direction_parse::parse_expr_to_dir;
+use crate::tool::parse_to_dir::parse_to_direction;
+use crate::{CataContext, eval_str_to_f64};
 use glam::{Mat3, Quat, Vec2, Vec3};
 use nom::Parser;
 use regex::Regex;
-use crate::{CataContext, eval_str_to_f64};
-use crate::expression::resolve::resolve_axis_param;
-use crate::tool::direction_parse::parse_expr_to_dir;
-use crate::tool::parse_to_dir::parse_to_direction;
+use std::collections::HashMap;
+use std::{mem, panic};
 
 #[test]
 fn test_exp() {
@@ -67,7 +67,6 @@ fn test_expression_regex() {
     }
 }
 
-
 //  SIN  00 00 03 85
 //  COS  00 00 03 86
 //  TAN  00 00 03 87
@@ -91,7 +90,6 @@ pub const INTERNAL_PDMS_EXPRESS: [&'static str; 22] = [
     "ATAN2", "ASIN", "INT", "OF", "MOD", "NEGATE", "SUM", "TANF", "TAN",
 ];
 
-
 /// 解析成不同的几何体参数
 pub fn resolve_to_cate_geo_params(gmse: &GmseParamData) -> anyhow::Result<CateGeoParam> {
     let geo = panic::catch_unwind(|| {
@@ -111,29 +109,25 @@ pub fn resolve_to_cate_geo_params(gmse: &GmseParamData) -> anyhow::Result<CateGe
                 plax: gmse.plax.unwrap_or(Vec3::Y),
                 na_axis: gmse.na_axis.unwrap_or(Vec3::Y),
             })),
-            "SPRO" => {
-                CateGeoParam::Profile(CateProfileParam::SPRO(SProfileData {
-                    refno: gmse.refno,
-                    verts: gmse.verts.iter().map(|x| x.truncate()).collect(),
-                    frads: gmse.frads.clone(),
-                    plax: gmse.plax.unwrap_or(Vec3::Y),
-                    plin_pos: gmse.plin_pos,
-                    plin_axis: gmse.plin_axis.unwrap_or(Vec3::Y),
-                    na_axis: gmse.na_axis.unwrap_or(Vec3::Y),
-                }))
-            }
-            "SREC" => {
-                CateGeoParam::Profile(CateProfileParam::SREC(SRectData {
-                    refno: gmse.refno,
-                    center: Vec2::new(gmse.xyz[0], gmse.xyz[1]),
-                    size: Vec2::new(gmse.lengths[0], gmse.lengths[1]),
-                    dxy: gmse.dxy[0],
-                    plax: gmse.plax.unwrap_or(Vec3::Y),
-                    plin_pos: gmse.plin_pos,
-                    plin_axis: gmse.plin_axis.unwrap_or(Vec3::Y),
-                    na_axis: gmse.na_axis.unwrap_or(Vec3::Y),
-                }))
-            }
+            "SPRO" => CateGeoParam::Profile(CateProfileParam::SPRO(SProfileData {
+                refno: gmse.refno,
+                verts: gmse.verts.iter().map(|x| x.truncate()).collect(),
+                frads: gmse.frads.clone(),
+                plax: gmse.plax.unwrap_or(Vec3::Y),
+                plin_pos: gmse.plin_pos,
+                plin_axis: gmse.plin_axis.unwrap_or(Vec3::Y),
+                na_axis: gmse.na_axis.unwrap_or(Vec3::Y),
+            })),
+            "SREC" => CateGeoParam::Profile(CateProfileParam::SREC(SRectData {
+                refno: gmse.refno,
+                center: Vec2::new(gmse.xyz[0], gmse.xyz[1]),
+                size: Vec2::new(gmse.lengths[0], gmse.lengths[1]),
+                dxy: gmse.dxy[0],
+                plax: gmse.plax.unwrap_or(Vec3::Y),
+                plin_pos: gmse.plin_pos,
+                plin_axis: gmse.plin_axis.unwrap_or(Vec3::Y),
+                na_axis: gmse.na_axis.unwrap_or(Vec3::Y),
+            })),
             "BOXI" => CateGeoParam::BoxImplied(CateBoxImpliedParam {
                 axis: None,
                 width: gmse.lengths[2],
@@ -291,9 +285,12 @@ pub fn resolve_to_cate_geo_params(gmse: &GmseParamData) -> anyhow::Result<CateGe
                     x: gmse.xyz[0],
                     y: gmse.xyz[1],
                     z: gmse.xyz[2],
-                    verts: gmse.verts.iter().zip(gmse.frads.iter()).map(|(v, d)| {
-                        Vec3::new(v[0], v[1], *d)
-                    }).collect(),
+                    verts: gmse
+                        .verts
+                        .iter()
+                        .zip(gmse.frads.iter())
+                        .map(|(v, d)| Vec3::new(v[0], v[1], *d))
+                        .collect(),
                     centre_line_flag: gmse.centre_line_flag,
                     tube_flag: gmse.tube_flag,
                 })
@@ -313,9 +310,12 @@ pub fn resolve_to_cate_geo_params(gmse: &GmseParamData) -> anyhow::Result<CateGe
                     pa: (gmse.paxises[0].clone()),
                     pb: (gmse.paxises[1].clone()),
                     angle: gmse.pang,
-                    verts: gmse.verts.iter().zip(gmse.frads.iter()).map(|(v, d)| {
-                        Vec3::new(v[0], v[1], *d)
-                    }).collect(),
+                    verts: gmse
+                        .verts
+                        .iter()
+                        .zip(gmse.frads.iter())
+                        .map(|(v, d)| Vec3::new(v[0], v[1], *d))
+                        .collect(),
                     x: gmse.xyz[0],
                     y: gmse.xyz[1],
                     z: gmse.xyz[2],
@@ -384,8 +384,7 @@ pub fn resolve_axis(
                 .parse::<i32>()
                 .unwrap_or(-1);
             if let Some(indx) = scom.axis_param_numbers.iter().position(|&x| x == pnt_index) {
-                let axis =
-                    resolve_axis_param(&scom.axis_params[indx], scom, context);
+                let axis = resolve_axis_param(&scom.axis_params[indx], scom, context);
                 let flag = if is_neg { -1.0 } else { 1.0 };
                 dir = flag * axis.dir.unwrap_or_default();
                 if !is_pp {
@@ -408,8 +407,7 @@ pub fn resolve_axis(
                 .parse::<i32>()
                 .unwrap_or(-1);
             if let Some(indx) = scom.axis_param_numbers.iter().position(|&x| x == pnt_indx) {
-                let mut axis =
-                    resolve_axis_param(&scom.axis_params[indx], scom, context);
+                let mut axis = resolve_axis_param(&scom.axis_params[indx], scom, context);
                 // if axis.dir.is_none() {
                 //     return Err(anyhow::anyhow!("方向为空"));
                 // }
@@ -491,10 +489,7 @@ pub fn resolve_axis(
 // }
 
 ///解析表达式里的axis
-pub fn parse_str_axis_to_vec3(
-    pdir: &str,
-    context: &CataContext,
-) -> anyhow::Result<Vec3> {
+pub fn parse_str_axis_to_vec3(pdir: &str, context: &CataContext) -> anyhow::Result<Vec3> {
     let pdir = pdir.trim();
     //TO X (NEG ( 20 )) Z ( 65 ), 直接解析就行了
     if pdir.starts_with("TO") {
@@ -517,13 +512,11 @@ pub fn parse_str_axis_to_vec3(
             // dbg!(&caps);
             if caps.len() == 6 {
                 let val_str = caps[2].to_string();
-                let val_result =
-                    eval_str_to_f64(&val_str, context, "ANGL")?.to_string();
+                let val_result = eval_str_to_f64(&val_str, context, "ANGL")?.to_string();
                 new_dir_str = dir_str.replace(&val_str, &val_result);
 
                 let val_str = caps[4].to_string();
-                let val_result =
-                    eval_str_to_f64(&val_str, context, "ANGL")?.to_string();
+                let val_result = eval_str_to_f64(&val_str, context, "ANGL")?.to_string();
                 new_dir_str = new_dir_str.replace(&val_str, &val_result);
                 is_three = true;
             }
@@ -539,8 +532,7 @@ pub fn parse_str_axis_to_vec3(
                 if caps.len() == 4 {
                     let val_str = caps[2].to_string();
                     // dbg!(&val_str);
-                    let val_result =
-                        eval_str_to_f64(&val_str, context, "ANGL")?.to_string();
+                    let val_result = eval_str_to_f64(&val_str, context, "ANGL")?.to_string();
                     new_dir_str = dir_str.replace(&val_str, &val_result);
                 }
             }

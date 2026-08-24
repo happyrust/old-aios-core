@@ -1,6 +1,5 @@
-
-use crate::{CataContext, eval_str_to_f64};
 use crate::expression::resolve_helper::parse_str_axis_to_vec3;
+use crate::{CataContext, eval_str_to_f64};
 
 #[test]
 fn test_parse_expression() {
@@ -23,7 +22,7 @@ fn test_parse_complex_expression() {
     dbg!(dir);
 
     let str = "( MAX (0.1, DESP[63 ] ) )";
-    let d = eval_str_to_f64(str, &context,"").unwrap_or_default();
+    let d = eval_str_to_f64(str, &context, "").unwrap_or_default();
     dbg!(d);
     assert_eq!(d, 0.2);
 
