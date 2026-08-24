@@ -599,10 +599,31 @@ impl BrepShapeTrait for SweepSolid {
         if !self.is_reuse_unit() {
             return bevy_transform::prelude::Transform::IDENTITY;
         }
-        let length = match &self.path {
-            SweepPath3D::Line(line) => line.length(),
-            SweepPath3D::SpineArc(_) => 10.0,
+        let (length, is_spine) = match &self.path {
+            SweepPath3D::Line(line) => (line.length(), line.is_spine),
+            SweepPath3D::SpineArc(_) => (10.0, true),
         };
+        // Direct POSS/POSE sweeps already receive their path orientation (and
+        // BANG) from get_world_transform.  Re-applying the path tangent here
+        // rotates STWALL/GENSEC geometry twice.  Explicit SPINE segments are
+        // different: their segment frame is not the owning element frame and
+        // must keep the libgm setSpineSegmentTransforms mapping.
+        if !is_spine {
+            let mut scale = Vec3::new(1.0, 1.0, length / 10.0);
+            if self.lmirror {
+                scale.x = -1.0;
+            }
+            let plax = if self.plax.length_squared() > 1e-12 {
+                self.plax.normalize()
+            } else {
+                Vec3::Y
+            };
+            return bevy_transform::prelude::Transform {
+                rotation: Quat::from_rotation_arc(Vec3::Y, plax),
+                scale,
+                translation: Vec3::ZERO,
+            };
+        }
         let spine = Self::set_spine_segment_transforms(
             length,
             self.plax,
@@ -945,22 +966,30 @@ mod tests {
     }
 
     #[test]
-    fn world_path_direction_lives_in_instance_rotation() {
+    fn direct_path_direction_lives_in_element_world_rotation() {
         let mut solid = reusable_line();
         solid.path = SweepPath3D::Line(Line3D {
             start: Vec3::ZERO,
             end: Vec3::X * 10.0,
             is_spine: false,
         });
-        solid.drns = Some(DVec3::NEG_X);
-        solid.drne = Some(DVec3::X);
+        solid.drns = Some(DVec3::X);
+        solid.drne = Some(DVec3::NEG_X);
 
         assert!(!solid.is_sloped());
+        let world = bevy_transform::prelude::Transform {
+            // Literal STWALL 17496/105816 world rotation.  It already maps the
+            // canonical extrusion axis onto POSS -> POSE (+X).
+            rotation: Quat::from_xyzw(0.5, 0.5, 0.5, 0.5),
+            translation: Vec3::new(-1300.0, -17201.369, -20.0),
+            scale: Vec3::ONE,
+        };
         let trans = solid.get_trans();
-        let rotated_z = trans.rotation * Vec3::Z;
+        assert_eq!(trans.rotation, Quat::IDENTITY);
+        let rotated_z = (world * trans).rotation * Vec3::Z;
         assert!(
             (rotated_z - Vec3::X).length() < 1e-5,
-            "instance rotation must send canonical +Z along the path, got {rotated_z:?}"
+            "world rotation must send canonical +Z along the direct POSS/POSE path, got {rotated_z:?}"
         );
         assert_eq!(unit(&solid).extrude_dir, DVec3::Z);
         let SweepPath3D::Line(line) = unit(&solid).path else {
