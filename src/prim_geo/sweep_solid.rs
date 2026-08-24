@@ -59,7 +59,8 @@ pub enum SolidSegmentKind {
 impl SweepSolid {
     /// Core3D `DB_Gensec::setMitrePlanes`：由端面法向与该段切向推导工作斜切平面。
     /// 不改元素上的 `DRNS`/`DRNE`。`None` 表示垂直或平行，斜切被抑制。
-    /// 起点方切外法向 = −tangent，终点 = +tangent。零长切向且有 DRN 时闭合失败（保留工作平面）。
+    /// DRNS/DRNE 都指向实体内部：起点方切法向 = +tangent，终点 = −tangent。
+    /// 零长切向且有 DRN 时闭合失败（保留工作平面）。
     pub fn set_mitre_planes(drn: Option<DVec3>, tangent: DVec3, is_start: bool) -> Option<DVec3> {
         let drn = drn?;
         let tan_len = tangent.length();
@@ -72,7 +73,7 @@ impl SweepSolid {
             return Some(drn);
         }
         let drn_unit = drn / drn_len;
-        let expected = if is_start { -tangent } else { tangent };
+        let expected = if is_start { tangent } else { -tangent };
         if (drn_unit - expected).length() <= MITRE_PARALLEL_EPS {
             return None;
         }
@@ -680,13 +681,13 @@ mod tests {
 
     #[test]
     fn drns_perp_no_mitre() {
-        assert_no_mitre(Some(DVec3::NEG_Z), DVec3::Z, true);
+        assert_no_mitre(Some(DVec3::Z), DVec3::Z, true);
         assert_no_mitre(None, DVec3::Z, true);
     }
 
     #[test]
     fn drne_perp_no_mitre() {
-        assert_no_mitre(Some(DVec3::Z), DVec3::Z, false);
+        assert_no_mitre(Some(DVec3::NEG_Z), DVec3::Z, false);
         assert_no_mitre(None, DVec3::Z, false);
     }
 
@@ -713,8 +714,8 @@ mod tests {
 
     #[test]
     fn perp_to_non_z_tangent() {
-        assert_no_mitre(Some(DVec3::NEG_X), DVec3::X, true);
-        assert_no_mitre(Some(DVec3::X), DVec3::X, false);
+        assert_no_mitre(Some(DVec3::X), DVec3::X, true);
+        assert_no_mitre(Some(DVec3::NEG_X), DVec3::X, false);
     }
 
     #[test]
@@ -777,8 +778,8 @@ mod tests {
     fn reusable_linear_aliases_share_hash_and_canonical_unit_shape() {
         let left = reusable_line();
         let mut right = left.clone();
-        right.drns = Some(DVec3::NEG_Z);
-        right.drne = Some(DVec3::Z);
+        right.drns = Some(DVec3::Z);
+        right.drne = Some(DVec3::NEG_Z);
         right.bangle = 37.0;
         right.plax = Vec3::X;
         right.extrude_dir = DVec3::X;
@@ -810,8 +811,8 @@ mod tests {
             end: Vec3::X * 7.0,
             is_spine: false,
         });
-        x_path.drns = Some(DVec3::NEG_X);
-        x_path.drne = Some(DVec3::X);
+        x_path.drns = Some(DVec3::X);
+        x_path.drne = Some(DVec3::NEG_X);
 
         assert!(
             !x_path.is_sloped(),
