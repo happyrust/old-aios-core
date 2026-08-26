@@ -30,8 +30,8 @@ use std::sync::mpsc;
 use std::sync::mpsc::Sender;
 use std::thread;
 use surrealdb::engine::any::Any;
-use surrealdb::sql::Thing;
 use surrealdb::Surreal;
+use surrealdb::types::{RecordId as Thing, SurrealValue, ToSql};
 use tokio::task;
 use tokio::task::JoinHandle;
 
@@ -66,7 +66,7 @@ pub struct PdmsMajor {
 }
 
 #[serde_as]
-#[derive(Serialize, Deserialize, Debug, Default, Clone)]
+#[derive(Serialize, Deserialize, Debug, Default, Clone, surrealdb::types::SurrealValue)]
 pub struct PbsMajorValue {
     pub id: RefU64,
     pub noun: String,
@@ -378,16 +378,16 @@ impl PBSRelate {
     pub fn to_surreal_relate(self, table: &str) -> String {
         format!(
             "relate {}->{}:[{},{}]->{}",
-            self.in_id.to_raw(),
+            self.in_id.to_sql(),
             table,
-            self.out_id.to_raw(),
+            self.out_id.to_sql(),
             self.order_num,
-            self.out_id.to_raw()
+            self.out_id.to_sql()
         )
     }
 }
 
-pub static PBS_ROOT_ID: Lazy<Thing> = Lazy::new(|| Thing::from(("pbs", "0")));
+pub static PBS_ROOT_ID: Lazy<Thing> = Lazy::new(|| Thing::new("pbs", "0"));
 pub const PBS_STR: &'static str = "PBS";
 
 /// 生成pbs固定节点
@@ -416,8 +416,8 @@ pub async fn set_pbs_fixed_node(mut handles: &mut Vec<JoinHandle<()>>) -> anyhow
             } else {
                 0
             };
-            let cur: Thing = ("pbs".to_string(), name_hash.to_string()).into();
-            let owner: Thing = ("pbs".to_string(), owner.to_string()).into();
+            let cur = Thing::new("pbs", name_hash.to_string());
+            let owner = Thing::new("pbs", owner.to_string());
             eles.push(PbsElement {
                 id: cur.clone(),
                 noun: v.att_type.clone(),
@@ -458,7 +458,7 @@ struct PbsRoomNodeResult {
     pub relate_sql: Vec<String>,
 }
 
-#[derive(Deserialize, Serialize, Debug, Clone)]
+#[derive(Deserialize, Serialize, Debug, Clone, surrealdb::types::SurrealValue)]
 pub struct PbsElement {
     pub id: Thing,
     pub owner: Thing,
@@ -471,8 +471,8 @@ pub struct PbsElement {
 impl Default for PbsElement {
     fn default() -> Self {
         Self {
-            id: Thing::from(("pbs", "0")),
-            owner: Thing::from(("pbs", "-1")),
+            id: Thing::new("pbs", "0"),
+            owner: Thing::new("pbs", "-1"),
             refno: None,
             name: String::default(),
             noun: None,
@@ -489,7 +489,7 @@ impl PbsElement {
 
     pub fn gen_sur_json(&self) -> String {
         let mut json_string = serde_json::to_string_pretty(&serde_json::json!({
-            "id": self.id.id.to_raw(),
+            "id": self.id.key.to_sql(),
             "owner": self.owner,
             "refno": self.refno,
             "name": self.name,
@@ -536,11 +536,11 @@ pub async fn set_pbs_room_node(
     let rooms = query_all_room_name().await?;
     let mut name_set = HashSet::new();
     name_set.insert("一号机组".to_string());
-    let first_jizhu: Thing = ("pbs".to_string(), PbsElement::id("一号机组").to_string()).into();
+    let first_jizhu = Thing::new("pbs", PbsElement::id("一号机组").to_string());
     // 将项目中所有的房间，通过厂房 、 层位 、 房间号进行排列和存储
     for (factory_idx, (factory, room)) in rooms.clone().into_iter().enumerate() {
         let factory_hash = PbsElement::id(&factory).to_string();
-        let factory_id: Thing = ("pbs".to_string(), factory_hash).into();
+        let factory_id = Thing::new("pbs", factory_hash);
         // 存放厂房
         result.push(PbsElement {
             id: factory_id.clone(),
@@ -559,8 +559,8 @@ pub async fn set_pbs_room_node(
         // 存放厂房下 安装层位 和 安装分区 两个固定节点
         let install_level = PbsElement::id(&format!("{}安装层位", factory)).to_string(); //将厂房放在一起hash，否则不同厂房的这两个节点会重复
         let install_area = PbsElement::id(&format!("{}安装分区", factory)).to_string();
-        let install_level_id: Thing = ("pbs".to_string(), install_level).into();
-        let install_area_id: Thing = ("pbs".to_string(), install_area).into();
+        let install_level_id = Thing::new("pbs", install_level);
+        let install_area_id = Thing::new("pbs", install_area);
         result.push(PbsElement {
             id: install_level_id.clone(),
             owner: factory_id.clone(),
@@ -598,7 +598,7 @@ pub async fn set_pbs_room_node(
             };
             // 将厂房和层位放在一起hash，单独的层位hash id会重复
             let level_hash = PbsElement::id(&format!("{}{}", factory, level)).to_string();
-            let level_id: Thing = ("pbs".to_string(), level_hash.clone()).into();
+            let level_id = Thing::new("pbs", level_hash.clone());
             // 层位
             if !level_map.contains(&level) {
                 result.push(PbsElement {
@@ -619,7 +619,7 @@ pub async fn set_pbs_room_node(
             }
             // 房间
             let room_hash = PbsElement::id(&r.name).to_string();
-            let room_id: Thing = ("pbs".to_string(), room_hash).into();
+            let room_id = Thing::new("pbs", room_hash);
             result.push(PbsElement {
                 id: room_id.clone(),
                 owner: level_id.clone(),
@@ -667,9 +667,9 @@ pub async fn set_pbs_room_major_node(
             // site 下的专业
             for (site_idx, (site_name, zones)) in pdms_level.level.iter().enumerate() {
                 let site_hash = PbsElement::id(&format!("{}{}", &r, site_name)).to_string();
-                let site_id: Thing = ("pbs".to_string(), site_hash).into();
+                let site_id = Thing::new("pbs", site_hash);
                 let room_hash = PbsElement::id(&r).to_string();
-                let room_id: Thing = ("pbs".to_string(), room_hash).into();
+                let room_id = Thing::new("pbs", room_hash);
                 let Some(site_major) = major_map.get(site_name) else {
                     continue;
                 };
@@ -690,7 +690,7 @@ pub async fn set_pbs_room_major_node(
                 // 专业下的子专业
                 for (zone_idx, zone) in zones.iter().enumerate() {
                     let zone_hash = PbsElement::id(&format!("{}{}", r, zone)).to_string(); // 避免不同专业下的子专业重复
-                    let zone_id: Thing = ("pbs".to_string(), zone_hash).into();
+                    let zone_id = Thing::new("pbs", zone_hash);
                     let Some(zone_major) = major_map.get(zone) else {
                         continue;
                     };
@@ -821,7 +821,7 @@ async fn set_pbs_bran_node(
         };
         let room_code = node.room_code.clone().unwrap();
         let owner = PbsElement::id(&format!("{}{}", room_code, zone.major)).to_string();
-        let owner_id: Thing = ("pbs".to_string(), owner).into();
+        let owner_id = Thing::new("pbs", owner);
         result.push(PbsElement {
             id: node.id.refno().to_pbs_thing(),
             refno: Some(node.id.clone()),
@@ -896,7 +896,7 @@ async fn set_pbs_equi_node(
         };
         let room_code = node.room_code.clone().unwrap();
         let owner = PbsElement::id(&format!("{}{}", room_code, zone.major)).to_string();
-        let owner_id: Thing = ("pbs".to_string(), owner).into();
+        let owner_id = Thing::new("pbs", owner);
         let node_id = node.id.refno().to_pbs_thing();
         result.push(PbsElement {
             id: node_id.clone(),
@@ -990,7 +990,7 @@ async fn set_pbs_supp_and_stru_node(
             };
             let room_code = node.room_code.clone().unwrap();
             let owner = PbsElement::id(&format!("{}{}", room_code, zone.major)).to_string();
-            let owner_id: Thing = ("pbs".to_string(), owner).into();
+            let owner_id = Thing::new("pbs", owner);
             let node_id = node.id.refno().to_pbs_thing();
             // 存放 STRU
             result.push(PbsElement {
@@ -1082,9 +1082,9 @@ async fn set_pbs_supp_and_stru_node(
                 continue;
             };
             let fixed_hash = PbsElement::id(&supp_fixed_name[0]);
-            let node_id: Thing = ("pbs".to_string(), fixed_hash.to_string()).into();
+            let node_id = Thing::new("pbs", fixed_hash.to_string());
             let owner = PbsElement::id(&format!("{}{}", room_code, zone.major)).to_string();
-            let owner_id: Thing = ("pbs".to_string(), owner).into();
+            let owner_id = Thing::new("pbs", owner);
             // 存放固定节点
             if !supp_owner_map.contains(&fixed_hash) {
                 result.push(PbsElement {
@@ -1168,7 +1168,7 @@ async fn set_pbs_supp_and_stru_node(
 
 /// pbs下重新划分的pdms树节点，bran equi等
 #[serde_as]
-#[derive(Debug, Serialize, Deserialize)]
+#[derive(Debug, Serialize, Deserialize, surrealdb::types::SurrealValue)]
 struct PBSRoomNode {
     pub id: RefnoEnum,
     pub name: String,

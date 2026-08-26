@@ -1,4 +1,4 @@
-use std::{any::TypeId};
+use std::any::TypeId;
 use bevy_reflect::{Reflect, Struct, TypeRegistry, DynamicStruct, Typed, ReflectFromReflect, std_traits::ReflectDefault};
 use serde_with::serde_as;
 use crate::types::*;
@@ -7,7 +7,7 @@ use sea_orm::{entity::prelude::*, Schema, QueryTrait, DatabaseBackend};
 use serde_with::DisplayFromStr;
 use crate::orm::traits::{DbOpTrait, ReflectDbOpTrait};
 use crate::impl_db_op_trait;
-use surrealdb::sql::Thing;
+use surrealdb::types::RecordId as Thing;
 
 #[serde_as]
 #[derive(Serialize, Deserialize, Clone, Debug, Default, DeriveEntityModel)]
@@ -103,4 +103,3 @@ fn test_ele_reflect() {
     let create_sql = entity_trait.gen_create_table(DatabaseBackend::MySql);
     dbg!(&create_sql);
 }
-

@@ -6,6 +6,7 @@ use crate::types::*;
 use glam::{Vec2, Vec3};
 use parry2d::bounding_volume::Aabb;
 use serde_derive::{Deserialize, Serialize};
+use surrealdb::types::SurrealValue;
 
 ///元件库的集合信息
 #[derive(Clone, Debug, Default, Serialize, Deserialize)]
@@ -78,13 +79,17 @@ pub struct GmseParamData {
     Serialize,
     Deserialize,
     Debug,
+    surrealdb::types::SurrealValue,
 )]
 pub struct CateAxisParam {
     pub refno: RefnoEnum,
     pub number: i32,
+    #[surreal(wrap)]
     pub pt: Vec3,
+    #[surreal(wrap)]
     pub dir: Option<Vec3>,
     pub dir_flag: f32,
+    #[surreal(wrap)]
     pub ref_dir: Option<Vec3>,
     pub pbore: f32,
     pub pwidth: f32,

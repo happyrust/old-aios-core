@@ -5,10 +5,10 @@ use serde::{Deserialize, Serialize};
 use serde_json::{json, to_string_pretty};
 use serde_with::DisplayFromStr;
 use std::fmt::format;
-use surrealdb::sql::Thing;
 use super::RefnoEnum;
+use surrealdb::types::{RecordId as Thing, SurrealValue};
 
-#[derive(Serialize, Deserialize, Clone, Debug, Resource, Default, PartialEq)]
+#[derive(Serialize, Deserialize, Clone, Debug, Resource, Default, PartialEq, surrealdb::types::SurrealValue)]
 pub struct SPdmsElement {
     //指向具体的类型
     pub refno: RefnoEnum,
@@ -28,6 +28,7 @@ pub struct SPdmsElement {
     //todo 可以改为使用 op 来表达是否删除
     pub deleted: bool,
     #[serde(default)]
+    #[surreal(wrap)]
     pub op: EleOperation,
 }
 

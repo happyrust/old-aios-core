@@ -1,4 +1,3 @@
-use std::collections::HashMap;
 use bevy_ecs::prelude::Resource;
 use bevy_transform::prelude::Transform;
 use serde::{Serialize, Deserialize};
@@ -7,7 +6,8 @@ use serde_with::serde_as;
 use serde_with::DisplayFromStr;
 use bevy_ecs::prelude::Component;
 use bevy_ecs::prelude::Event;
-
+use std::collections::HashMap;
+use surrealdb::types::SurrealValue;
 
 #[derive(Debug, Default, Clone, Serialize, Deserialize, Resource)]
 pub struct ReviewModelData {
@@ -99,7 +99,7 @@ pub struct ThreeDimensionalReviewData {
     pub status: bool,
 }
 
-#[derive(Debug, Default, Clone, Eq, PartialEq, Serialize, Deserialize)]
+#[derive(Debug, Default, Clone, Eq, PartialEq, Serialize, Deserialize, surrealdb::types::SurrealValue)]
 pub struct ModelDataIndex {
     pub refno: RefU64,
     pub name: String,

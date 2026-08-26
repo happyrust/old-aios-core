@@ -30,6 +30,8 @@ use serde::{Deserialize, Serialize};
 use serde_with::serde_as;
 use serde_with::DisplayFromStr;
 use std::{collections::HashSet, f32::consts::E, time::Instant};
+use surrealdb::Surreal;
+use surrealdb::types::SerdeWrapper;
 use surrealdb::engine::any::Any;
 use surrealdb::Surreal;
 
@@ -190,7 +192,11 @@ pub async fn get_spline_pts_on(
 ) -> anyhow::Result<Vec<DVec3>> {
     let mut response = db.query(
         format!("select value (select in.refno.POS as pos, order_num from <-pe_owner[where in.noun='SPINE'].in<-pe_owner order by order_num).pos from only {}", refno.to_pe_key())).await?;
-    let pts: Vec<DVec3> = response.take(0)?;
+    let pts = response
+        .take::<Vec<SerdeWrapper<DVec3>>>(0)?
+        .into_iter()
+        .map(|point| point.0)
+        .collect();
     Ok(pts)
 }
 

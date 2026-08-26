@@ -6,6 +6,7 @@ use serde::{Deserialize, Serialize};
 use serde::{Deserializer, Serializer};
 use serde_with::serde_as;
 use serde_with::DisplayFromStr;
+use surrealdb::types::{SurrealValue, ToSql};
 use std::fmt::{Debug, Display, Formatter, Write};
 use std::hash::Hash;
 use std::ops::Deref;
@@ -29,6 +30,7 @@ pub struct ParseRefU64Error;
     PartialOrd,
     Ord,
     Reflect,
+    SurrealValue,
 )]
 pub struct RefU64(pub u64);
 
@@ -189,7 +191,7 @@ impl FromStr for RefU64 {
 
 impl From<Thing> for RefU64 {
     fn from(thing: Thing) -> Self {
-        thing.id.to_raw().as_str().into()
+        thing.key.to_sql().as_str().into()
     }
 }
 
@@ -345,7 +347,7 @@ impl RefU64 {
 
     #[inline]
     pub fn to_pe_thing(&self) -> Thing {
-        ("pe".to_string(), self.to_string()).into()
+        Thing::new("pe", self.to_string())
     }
 
     #[inline]
@@ -360,7 +362,7 @@ impl RefU64 {
 
     #[inline]
     pub fn to_pbs_thing(&self) -> Thing {
-        ("pbs".to_string(), self.to_string()).into()
+        Thing::new("pbs", self.to_string())
     }
 
     pub fn to_type_key(&self, noun: &str) -> String {
@@ -478,7 +480,7 @@ use anyhow::anyhow;
 #[cfg(feature = "sea-orm")]
 use sea_orm::sea_query::ValueType;
 use std::string::String;
-use surrealdb::sql::Thing;
+use surrealdb::types::RecordId as Thing;
 
 impl Into<String> for RefI32Tuple {
     fn into(self) -> String {
@@ -548,6 +550,7 @@ impl RefI32Tuple {
     rkyv::Archive,
     rkyv::Deserialize,
     rkyv::Serialize,
+    SurrealValue,
 )]
 pub struct RefnoSesno {
     pub refno: RefU64,
@@ -618,6 +621,7 @@ impl Into<u32> for RefnoSesno {
     rkyv::Deserialize,
     rkyv::Serialize,
     Component,
+    SurrealValue,
 )]
 #[serde(untagged)]
 pub enum RefnoEnum {
@@ -831,17 +835,13 @@ impl From<(&str, u32)> for RefnoEnum {
 impl From<Thing> for RefnoEnum {
     fn from(value: Thing) -> Self {
         //检查是否是 array
-        if let surrealdb::sql::Id::Array(array) = &value.id {
-            let refno = array.get(0).cloned().unwrap_or_default().to_string();
-            let sesno: u32 = array
-                .get(1)
-                .cloned()
-                .unwrap_or_default()
-                .try_into()
+        if let surrealdb::types::RecordIdKey::Array(array) = &value.key {
+            let refno = array.get(0).cloned().unwrap_or_default().to_sql();
+            let sesno = u32::from_value(array.get(1).cloned().unwrap_or_default())
                 .unwrap_or_default();
             Self::SesRef(RefnoSesno::new(refno.into(), sesno))
         } else {
-            Self::Refno(RefU64::from_str(&value.id.to_raw()).unwrap_or_default())
+            Self::Refno(RefU64::from_str(&value.key.to_sql()).unwrap_or_default())
         }
     }
 }

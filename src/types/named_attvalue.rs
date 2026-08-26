@@ -10,6 +10,7 @@ use sea_query::Value as SeaValue;
 use serde::Deserializer;
 use serde::{Deserialize, Serialize};
 use serde_json::json;
+use surrealdb::types::SurrealValue;
 
 ///新的属性数据结构
 #[derive(
@@ -21,6 +22,7 @@ use serde_json::json;
     Debug,
     Component,
     Default,
+    surrealdb::types::SurrealValue,
     rkyv::Archive,
     rkyv::Deserialize,
     rkyv::Serialize,
@@ -33,7 +35,7 @@ pub enum NamedAttrValue {
     StringType(String),
     F32Type(f32),
     F32VecType(Vec<f32>),
-    Vec3Type(Vec3),
+    Vec3Type(#[surreal(wrap)] Vec3),
     StringArrayType(Vec<String>),
     BoolArrayType(Vec<bool>),
     IntArrayType(Vec<i32>),
@@ -50,7 +52,7 @@ use serde::de::{self, EnumAccess, MapAccess, SeqAccess, Visitor};
 use std::fmt;
 use std::str::FromStr;
 use std::vec::Vec;
-use surrealdb::sql::{Array, Thing};
+use surrealdb::types::{Array, Number, RecordId as Thing, RecordIdKey, ToSql, Value};
 
 use super::RefnoEnum;
 
@@ -220,54 +222,54 @@ impl Into<Value> for NamedAttrValue {
     }
 }
 
-impl From<(&str, surrealdb::sql::Value)> for NamedAttrValue {
-    fn from(tuple: (&str, surrealdb::sql::Value)) -> Self {
+impl From<(&str, Value)> for NamedAttrValue {
+    fn from(tuple: (&str, Value)) -> Self {
         let (tn, value) = tuple;
         match value {
-            surrealdb::sql::Value::Number(val) => match tn {
-                "REAL" => NamedAttrValue::F32Type(val.as_float() as _),
-                _ => NamedAttrValue::IntegerType(val.as_int() as _),
+            Value::Number(val) => match tn {
+                "REAL" => NamedAttrValue::F32Type(val.to_f64().unwrap_or_default() as _),
+                _ => NamedAttrValue::IntegerType(val.to_int().unwrap_or_default() as _),
             },
-            surrealdb::sql::Value::Bool(val) => NamedAttrValue::BoolType(val),
-            surrealdb::sql::Value::Strand(val) => NamedAttrValue::StringType(val.as_string()),
-            surrealdb::sql::Value::Array(val) => match tn {
+            Value::Bool(val) => NamedAttrValue::BoolType(val),
+            Value::String(val) => NamedAttrValue::StringType(val),
+            Value::Array(val) => match tn {
                 "REAL" | "DIR" | "POS" => NamedAttrValue::F32VecType(
                     val.into_iter()
-                        .map(|x| surrealdb::sql::Number::try_from(x).unwrap().as_float() as f32)
+                        .map(|x| Number::from_value(x).unwrap_or_default().to_f64().unwrap_or_default() as f32)
                         .collect(),
                 ),
                 "INT" => NamedAttrValue::IntArrayType(
                     val.into_iter()
-                        .map(|x| surrealdb::sql::Number::try_from(x).unwrap().as_int() as _)
+                        .map(|x| Number::from_value(x).unwrap_or_default().to_int().unwrap_or_default() as _)
                         .collect(),
                 ),
                 "BOOL" => NamedAttrValue::BoolArrayType(
                     val.into_iter()
-                        .map(|x| bool::try_from(x).unwrap())
+                        .map(|x| bool::from_value(x).unwrap_or_default())
                         .collect(),
                 ),
                 "TEXT" => NamedAttrValue::StringArrayType(
                     val.into_iter()
-                        .map(|x| String::try_from(x).unwrap())
+                        .map(|x| String::from_value(x).unwrap_or_default())
                         .collect(),
                 ),
 
                 "REF" => NamedAttrValue::RefU64Array(
                     val.into_iter()
-                        .map(|x| RefnoEnum::from(x.to_string().as_str()))
+                        .map(|x| RefnoEnum::from(x.to_sql().as_str()))
                         .collect::<Vec<_>>(),
                 ),
 
                 _ => NamedAttrValue::InvalidType,
             },
-            surrealdb::sql::Value::Thing(val) => {
-                if let surrealdb::sql::Id::Array(_) = &val.id {
+            Value::RecordId(val) => {
+                if let RecordIdKey::Array(_) = &val.key {
                     NamedAttrValue::RefnoEnumType(RefnoEnum::from(val))
                 } else {
                     NamedAttrValue::RefU64Type(RefU64::from(val))
                 }
             }
-            surrealdb::sql::Value::Object(val) => {
+            Value::Object(val) => {
                 if let Some((key, v)) = val.into_iter().next() {
                     (tn, v).into()
                 } else {
@@ -282,17 +284,13 @@ impl From<(&str, surrealdb::sql::Value)> for NamedAttrValue {
 #[test]
 fn test_from_surreal() {
     let sql = vec!["17463_6376".to_string(), "17463_6379".to_string()];
-    let value = surrealdb::sql::Value::Array(Array::from(sql));
-    if let surrealdb::sql::Value::Array(value) = value {
+    let value = Value::Array(Array::from(sql));
+    if let Value::Array(value) = value {
         let r = value
             .into_iter()
-            .map(|x| match x.clone().record() {
-                None => {
-                    RefnoEnum::from(x.to_string().as_str())
-                }
-                Some(id) => {
-                    RefnoEnum::from(id)
-                }
+            .map(|x| match x {
+                Value::RecordId(id) => RefnoEnum::from(id),
+                value => RefnoEnum::from(value.to_sql().as_str()),
             })
             .collect::<Vec<_>>();
         dbg!(&r);

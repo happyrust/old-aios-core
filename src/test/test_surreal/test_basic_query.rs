@@ -4,7 +4,7 @@ use crate::SUL_DB;
 use crate::{rs_surreal, NamedAttrMap, RefU64};
 use glam::Vec3;
 use std::sync::Arc;
-use surrealdb::sql::Thing;
+use surrealdb::types::RecordId as Thing;
 
 // #[tokio::test]
 // async fn test_query_pe_by_refno() -> anyhow::Result<()> {

@@ -125,7 +125,7 @@ once_cell = "1.18.0"
 urlencoding = "2.1.3"
 chrono = "0.4"
 
-surrealdb = { git = "https://gitee.com/happydpc/surrealdb", default-features = false, features = [
+surrealdb = { git = "https://github.com/surrealdb/surrealdb", rev = "93ab219d69f09d8f999851b0359c80ebe6726102", default-features = false, features = [
     "protocol-ws",
 ] }
 num-traits = "0.2.17"
@@ -154,8 +154,5 @@ sqlx = { version = "0.7.4", default-features = false, features = [
 duckdb = { version = "1.2.2" }
 
 [dev-dependencies]
-surrealdb = { git = "https://gitee.com/happydpc/surrealdb", default-features = false, features = ["kv-mem"] }
+surrealdb = { git = "https://github.com/surrealdb/surrealdb", rev = "93ab219d69f09d8f999851b0359c80ebe6726102", default-features = false, features = ["kv-mem"] }
 
-
-#[patch."https://gitee.com/happydpc/surrealdb.git"]
-#surrealdb = { path = "../../surrealdb/crates/sdk" }

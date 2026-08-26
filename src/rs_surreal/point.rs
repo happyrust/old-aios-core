@@ -8,6 +8,7 @@ use parry3d::bounding_volume::Aabb;
 use crate::basic::aabb::ParryAabb;
 use crate::parsed_data::CateAxisParam;
 use crate::pdms_types::PdmsGenericType;
+use surrealdb::types::SerdeWrapper;
 
 #[serde_as]
 #[derive(Serialize, Deserialize, Debug)]
@@ -44,7 +45,13 @@ pub async fn query_arrive_leave_points(refnos: impl IntoIterator<Item = &RefU64>
         .await.unwrap();
 
     // dbg!(&response);
-    let result: Vec<(RefU64, Transform, Option<CateAxisParam>, Option<CateAxisParam>)> = response.take(0).unwrap();
+    let result: Vec<SerdeWrapper<(
+        RefU64,
+        Transform,
+        Option<CateAxisParam>,
+        Option<CateAxisParam>,
+    )>> = response.take(0)?;
+    let result = result.into_iter().map(|row| row.0).collect::<Vec<_>>();
     // dbg!(&r);
     let mut map = DashMap::new();
     for (refno, trans, a_pt, l_pt) in result {

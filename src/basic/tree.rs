@@ -4,10 +4,10 @@ use serde_derive::{Deserialize, Serialize};
 use bevy_ecs::component::Component;
 use id_tree::Tree;
 use std::io::{Read, Write};
-use surrealdb::sql::Thing;
 use crate::pdms_types::{EleTreeNode, PdmsNodeTrait};
 use crate::RefU64;
 use derive_more::{Deref, DerefMut};
+use surrealdb::types::RecordId as Thing;
 
 pub type E3dTree = ElementTree<EleTreeNode>;
 

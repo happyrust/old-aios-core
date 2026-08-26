@@ -11,6 +11,7 @@ use surrealdb::sql::Thing;
 use std::collections::{BTreeMap, HashMap};
 use std::f32::consts::E;
 use std::sync::Mutex;
+use surrealdb::types::RecordId as Thing;
 
 #[cached]
 pub async fn get_uda_refno(hash: i32) -> Option<RefU64> {

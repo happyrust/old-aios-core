@@ -20,8 +20,8 @@ use std::collections::{BTreeMap, BTreeSet, HashMap, HashSet};
 use std::fs::{File, OpenOptions};
 use std::str::FromStr;
 use surrealdb::method::Stats;
-use surrealdb::sql::Thing;
 use crate::query_ancestor_refnos;
+use surrealdb::types::{RecordId as Thing, SurrealValue, ToSql, Value};
 
 #[inline]
 pub async fn query_filter_all_bran_hangs(refno: RefnoEnum) -> anyhow::Result<Vec<RefnoEnum>> {
@@ -90,7 +90,7 @@ async fn query_deep_children_refnos_uncached(
 
 #[cached(result = true)]
 pub async fn query_deep_children_refnos_pbs(refno: Thing) -> anyhow::Result<Vec<Thing>> {
-    let pe_key = refno.to_string();
+    let pe_key = refno.to_sql();
     let sql = format!(
         r#"
              return array::flatten( object::values( select
@@ -160,8 +160,11 @@ pub async fn query_filter_deep_children_atts(
         // println!("query_filter_deep_children_atts sql is {}", &sql);
         match super::staging::data_db().query(&sql).with_stats().await {
             Ok(mut response) => {
-                if let Some((stats, Ok(value))) = response.take::<surrealdb::Value>(0) {
-                    let result: Vec<surrealdb::sql::Value> = value.into_inner().try_into().unwrap();
+                if let Some((stats, Ok(value))) = response.take::<Value>(0) {
+                    let result = match value {
+                        Value::Array(values) => values.into_inner(),
+                        value => vec![value],
+                    };
                     // dbg!(result.len());
                     atts.extend(result.into_iter().map(|x| x.into()));
                 }
@@ -180,7 +183,7 @@ pub async fn query_ele_filter_deep_children_pbs(
     nouns: &[&str],
 ) -> anyhow::Result<Vec<PbsElement>> {
     let refnos = query_deep_children_refnos_pbs(refno).await?;
-    let pe_keys = refnos.into_iter().join(",");
+    let pe_keys = refnos.into_iter().map(|id| id.to_sql()).join(",");
     let nouns_str = rs_surreal::convert_to_sql_str_array(nouns);
     let sql = format!(r#"select * from [{pe_keys}] where noun in [{nouns_str}]"#);
     // println!("sql is {}", &sql);
@@ -516,7 +519,7 @@ pub struct WallContainsDoor {
     pub fitts: Vec<WallDoorResult>,
 }
 
-#[derive(Serialize, Deserialize, Clone, Debug, Default)]
+#[derive(Serialize, Deserialize, Clone, Debug, Default, surrealdb::types::SurrealValue)]
 struct WallDoorResult {
     pub refno: RefU64,
     pub name: String,

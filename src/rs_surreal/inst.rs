@@ -8,18 +8,21 @@ use glam::{DVec3, Vec3};
 use parry3d::bounding_volume::Aabb;
 use serde_derive::{Deserialize, Serialize};
 use serde_with::serde_as;
+use surrealdb::types::SurrealValue;
 
 #[serde_as]
-#[derive(Serialize, Deserialize, Debug)]
+#[derive(Serialize, Deserialize, Debug, surrealdb::types::SurrealValue)]
 pub struct TubiInstQuery {
     #[serde(alias = "id")]
     pub refno: RefnoEnum,
     pub old_refno: Option<RefnoEnum>,
     pub generic: Option<String>,
+    #[surreal(wrap)]
     pub world_aabb: Aabb,
+    #[surreal(wrap)]
     pub world_trans: Transform,
     pub geo_hash: String,
-    pub date: Option<surrealdb::sql::Datetime>,
+    pub date: Option<surrealdb::types::Datetime>,
 }
 
 pub async fn query_tubi_insts_by_brans(
@@ -99,7 +102,7 @@ pub struct ModelInstData {
 
 ///
 /// 几何实例查询结构体
-#[derive(Serialize, Deserialize, Debug)]
+#[derive(Serialize, Deserialize, Debug, surrealdb::types::SurrealValue)]
 pub struct GeomInstQuery {
     /// 构件编号，别名为id
     #[serde(alias = "id")]
@@ -109,19 +112,23 @@ pub struct GeomInstQuery {
     /// 所属构件编号
     pub owner: RefnoEnum,
     /// 世界坐标系下的包围盒
+    #[surreal(wrap)]
     pub world_aabb: Aabb,
     /// 世界坐标系下的变换矩阵
+    #[surreal(wrap)]
     pub world_trans: Transform,
     /// 几何实例列表
+    #[surreal(wrap)]
     pub insts: Vec<ModelHashInst>,
     /// 是否包含负实体
     pub has_neg: bool,
     /// 构件类型
     pub generic: String,
     /// 点集数据
+    #[surreal(wrap)]
     pub pts: Option<Vec<Vec3>>,
     /// 时间戳
-    pub date: Option<surrealdb::sql::Datetime>,
+    pub date: Option<surrealdb::types::Datetime>,
 }
 
 /// 几何点集查询结构体

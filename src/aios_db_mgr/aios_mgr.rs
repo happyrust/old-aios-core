@@ -34,8 +34,8 @@ pub async fn init_surreal_with_signin(db_option: &DbOption) -> anyhow::Result<()
         .await?;
     SUL_DB
         .signin(Root {
-            username: &db_option.v_user,
-            password: &db_option.v_password,
+            username: db_option.v_user.clone(),
+            password: db_option.v_password.clone(),
         })
         .await?;
     Ok(())
@@ -175,8 +175,8 @@ impl PdmsDataInterface for AiosDBMgr {
     async fn get_spre_attr(&self, refno: RefU64) -> anyhow::Result<Option<NamedAttrMap>> {
         let sql = format!("(select * from {}.refno.SPRE.refno)[0]", refno.to_pe_key());
         let mut response = SUL_DB.query(sql).await?;
-        let o: surrealdb::Value = response.take(0)?;
-        let named_attmap: NamedAttrMap = o.into_inner().into();
+        let o: surrealdb::types::Value = response.take(0)?;
+        let named_attmap: NamedAttrMap = o.into();
         if named_attmap.map.is_empty() {
             return Ok(None);
         };
@@ -189,8 +189,8 @@ impl PdmsDataInterface for AiosDBMgr {
             refno.to_pe_key()
         );
         let mut response = SUL_DB.query(sql).await?;
-        let o: surrealdb::Value = response.take(0)?;
-        let named_attmap: NamedAttrMap = o.into_inner().into();
+        let o: surrealdb::types::Value = response.take(0)?;
+        let named_attmap: NamedAttrMap = o.into();
         if named_attmap.map.is_empty() {
             return Ok(None);
         };
@@ -208,8 +208,8 @@ impl PdmsDataInterface for AiosDBMgr {
             foreign_type
         );
         let mut response = SUL_DB.query(sql).await?;
-        let o: surrealdb::Value = response.take(0)?;
-        let named_attmap: NamedAttrMap = o.into_inner().into();
+        let o: surrealdb::types::Value = response.take(0)?;
+        let named_attmap: NamedAttrMap = o.into();
         if named_attmap.map.is_empty() {
             return Ok(None);
         };

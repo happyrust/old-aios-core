@@ -9,7 +9,7 @@ use anyhow::anyhow;
 use serde::{Deserialize, Serialize};
 use std::collections::{btree_map::BTreeMap, HashSet};
 use std::io::Write;
-use surrealdb::sql::{Datetime, Thing};
+use surrealdb::types::{Datetime, RecordId as Thing, SurrealValue, ToSql};
 
 pub async fn export_surreal_data(
     refno: RefU64,
@@ -91,7 +91,10 @@ pub async fn export_surreal_data(
                     // 导出geo_relate
                     let geo_relates = GeoRelate::query_by_inst_info_id(&relate.out).await?;
                     for geo_rel in geo_relates {
-                        meshes.insert(format!("{}.mesh",geo_rel.out.id.to_string().replace("⟨", "").replace("⟩", "")));
+                        meshes.insert(format!(
+                            "{}.mesh",
+                            geo_rel.out.key.to_sql().replace("⟨", "").replace("⟩", "")
+                        ));
                         // 导出 geo_relate 本体
                         let geo_sql = export_geo_relate(&geo_rel);
                         sqls.push(geo_sql);
@@ -237,7 +240,7 @@ fn export_tree_node(pe: &SPdmsElement) -> String {
 fn export_owner_relate(relate: OwnerRelate) -> String {
     format!(
         "INSERT RELATION INTO pe_owner {{ id: pe_owner:[{1}, {2}], in: {0}, out: {1} }}",
-        relate.r#in, relate.id.0, relate.id.1
+        relate.r#in.to_sql(), relate.id.0.to_sql(), relate.id.1
     )
 }
 
@@ -335,7 +338,7 @@ fn generate_attr_insert_sql(refno: &SPdmsElement, attmap: &NamedAttrMap) -> Stri
     format!("INSERT IGNORE INTO {} {};", refno.noun, attr_data)
 }
 
-#[derive(Serialize, Deserialize, Clone, Debug)]
+#[derive(Serialize, Deserialize, Clone, Debug, surrealdb::types::SurrealValue)]
 struct OwnerRelate {
     pub id: (Thing, u32),
     pub r#in: Thing,
@@ -437,7 +440,7 @@ async fn get_inst_data(refno: &SPdmsElement, mut sqls: &mut Vec<String>) -> anyh
             }
         }
 
-        #[derive(Serialize, Deserialize, Clone, Debug)]
+        #[derive(Serialize, Deserialize, Clone, Debug, surrealdb::types::SurrealValue)]
         struct TubiRelate {
             pub id: Thing,
             pub r#in: Thing,
@@ -476,7 +479,14 @@ async fn get_inst_data(refno: &SPdmsElement, mut sqls: &mut Vec<String>) -> anyh
             };
             format!(
         "INSERT IGNORE INTO tubi_relate {{ id: {}, in: {}, out: {}, aabb: {}, world_trans: {}, arrive: {}, leave: {}, bore_size: {} }};",
-        rel.id, rel.r#in, rel.out, rel.aabb, rel.world_trans, rel.arrive, rel.leave, bore
+        rel.id.to_sql(),
+        rel.r#in.to_sql(),
+        rel.out.to_sql(),
+        rel.aabb.to_sql(),
+        rel.world_trans.to_sql(),
+        rel.arrive.to_sql(),
+        rel.leave.to_sql(),
+        bore
     )
         }
     }
@@ -508,7 +518,7 @@ fn extract_refnos_from_attributes(attmap: &NamedAttrMap) -> Vec<RefU64> {
     refs
 }
 
-#[derive(Serialize, Deserialize, Clone, Debug)]
+#[derive(Serialize, Deserialize, Clone, Debug, surrealdb::types::SurrealValue)]
 struct InstRelate {
     pub id: Thing,
     pub r#in: Thing,
@@ -519,7 +529,7 @@ struct InstRelate {
     pub has_cata_neg: bool,
     pub solid: bool,
     pub zone_refno: Option<Thing>,
-    pub dt: Option<surrealdb::sql::Datetime>,
+    pub dt: Option<Datetime>,
 }
 
 impl InstRelate {
@@ -540,20 +550,20 @@ impl InstRelate {
 
 fn export_inst_relate(relate: InstRelate) -> String {
     format!(
-            "INSERT RELATION INTO inst_relate {{ id: {}, in: {}, out: {}, aabb: {}, world_trans: {}, generic: \"{}\", has_cata_neg: {}, solid: {}, dt: {} }};",
-            relate.id.clone(),
-            relate.r#in,
-            relate.out,
-            relate.aabb.unwrap_or(relate.id),
-            relate.world_trans,
-            relate.generic,
-            relate.has_cata_neg,
-            relate.solid,
-            relate.dt.unwrap_or(Datetime::default())
-        )
+        "INSERT RELATION INTO inst_relate {{ id: {}, in: {}, out: {}, aabb: {}, world_trans: {}, generic: \"{}\", has_cata_neg: {}, solid: {}, dt: {} }};",
+        relate.id.to_sql(),
+        relate.r#in.to_sql(),
+        relate.out.to_sql(),
+        relate.aabb.unwrap_or(relate.id).to_sql(),
+        relate.world_trans.to_sql(),
+        relate.generic,
+        relate.has_cata_neg,
+        relate.solid,
+        relate.dt.unwrap_or(Datetime::default())
+    )
 }
 
-#[derive(Serialize, Deserialize, Clone, Debug)]
+#[derive(Serialize, Deserialize, Clone, Debug, surrealdb::types::SurrealValue)]
 struct TubiRelate {
     pub id: Thing,
     pub r#in: Thing,
@@ -591,11 +601,12 @@ fn export_tubi_relate(rel: &TubiRelate) -> String {
     };
     format!(
         "INSERT RELATION INTO tubi_relate {{ id: {}, in: {}, out: {}, aabb: {}, world_trans: {}, arrive: {}, leave: {}, bore_size: {} }};",
-        rel.id, rel.r#in, rel.out, rel.aabb, rel.world_trans, rel.arrive, rel.leave, bore
+        rel.id.to_sql(), rel.r#in.to_sql(), rel.out.to_sql(), rel.aabb.to_sql(),
+        rel.world_trans.to_sql(), rel.arrive.to_sql(), rel.leave.to_sql(), bore
     )
 }
 
-#[derive(Serialize, Deserialize, Clone, Debug)]
+#[derive(Serialize, Deserialize, Clone, Debug, surrealdb::types::SurrealValue)]
 struct Vec3Record {
     pub id: Thing,
     pub d: serde_json::Value,
@@ -604,7 +615,7 @@ struct Vec3Record {
 impl Vec3Record {
     pub async fn query_by_id(id: &Thing) -> anyhow::Result<Option<Vec3Record>> {
         use crate::SUL_DB;
-        let sql = format!("select * from {};", id);
+        let sql = format!("select * from {};", id.to_sql());
         let mut response = SUL_DB.query(sql).await?;
         let mut rows: Vec<Vec3Record> = response.take(0)?;
         Ok(rows.pop())
@@ -614,11 +625,11 @@ impl Vec3Record {
 fn export_vec3_record(row: &Vec3Record) -> String {
     format!(
         "INSERT IGNORE INTO vec3 {{ id: {}, d: {} }};",
-        row.id, row.d
+        row.id.to_sql(), row.d
     )
 }
 
-#[derive(Serialize, Deserialize, Clone, Debug)]
+#[derive(Serialize, Deserialize, Clone, Debug, surrealdb::types::SurrealValue)]
 struct InstGeoRecord {
     pub id: Thing,
     #[serde(default)]
@@ -635,7 +646,7 @@ impl InstGeoRecord {
     /// 根据 inst_geo 主键查询行
     pub async fn query_by_id(id: &Thing) -> anyhow::Result<Option<InstGeoRecord>> {
         use crate::SUL_DB;
-        let sql = format!("select * from {};", id);
+        let sql = format!("select * from {};", id.to_sql());
         let mut response = SUL_DB.query(sql).await?;
         let mut rows: Vec<InstGeoRecord> = response.take(0)?;
         Ok(rows.pop())
@@ -646,12 +657,12 @@ fn export_inst_geo_record(row: &InstGeoRecord) -> String {
     let aabb = row
         .aabb
         .clone()
-        .map(|t| t.to_string())
+        .map(|t| t.to_sql())
         .unwrap_or("NONE".into());
     let pts = row
         .pts
         .iter()
-        .map(|t| t.to_string())
+        .map(|t| t.to_sql())
         .collect::<Vec<_>>()
         .join(", ");
     let meshed = row.meshed.unwrap_or(false);
@@ -662,11 +673,11 @@ fn export_inst_geo_record(row: &InstGeoRecord) -> String {
         .unwrap_or("{}".to_string());
     format!(
         "INSERT IGNORE INTO inst_geo {{ id: {}, aabb: {}, meshed: {}, param: {}, pts: [{}] }};",
-        row.id, aabb, meshed, param, pts
+        row.id.to_sql(), aabb, meshed, param, pts
     )
 }
 
-#[derive(Serialize, Deserialize, Clone, Debug)]
+#[derive(Serialize, Deserialize, Clone, Debug, surrealdb::types::SurrealValue)]
 struct AabbRecord {
     pub id: Thing,
     pub d: serde_json::Value,
@@ -676,7 +687,7 @@ impl AabbRecord {
     /// 根据 aabb 表的主键查询整条记录，例如 aabb:⟨...⟩
     pub async fn query_by_id(aabb_id: &Thing) -> anyhow::Result<Option<AabbRecord>> {
         use crate::SUL_DB;
-        let sql = format!("select * from {};", aabb_id);
+        let sql = format!("select * from {};", aabb_id.to_sql());
         let mut response = SUL_DB.query(sql).await?;
         let mut rows: Vec<AabbRecord> = response.take(0)?;
         Ok(rows.pop())
@@ -686,11 +697,11 @@ impl AabbRecord {
 fn export_aabb_record(row: &AabbRecord) -> String {
     format!(
         "INSERT IGNORE INTO aabb {{ id: {}, d: {} }};",
-        row.id, row.d
+        row.id.to_sql(), row.d
     )
 }
 
-#[derive(Serialize, Deserialize, Clone, Debug)]
+#[derive(Serialize, Deserialize, Clone, Debug, surrealdb::types::SurrealValue)]
 struct TransRecord {
     pub id: Thing,
     pub d: serde_json::Value,
@@ -701,7 +712,7 @@ impl TransRecord {
     pub async fn query_by_id(trans_id: &Thing) -> anyhow::Result<Option<TransRecord>> {
         use crate::SUL_DB;
 
-        let sql = format!("select * from {};", trans_id);
+        let sql = format!("select * from {};", trans_id.to_sql());
         let mut response = SUL_DB.query(sql).await?;
         let mut rows: Vec<TransRecord> = response.take(0)?;
         Ok(rows.pop())
@@ -711,21 +722,22 @@ impl TransRecord {
 fn export_trans_record(row: &TransRecord) -> String {
     format!(
         "INSERT IGNORE INTO trans {{ id: {}, d: {} }};",
-        row.id, row.d
+        row.id.to_sql(), row.d
     )
 }
 
-#[derive(Serialize, Deserialize, Clone, Debug)]
+#[derive(Serialize, Deserialize, Clone, Debug, surrealdb::types::SurrealValue)]
 struct InstInfoRecord {
     pub id: Thing,
     #[serde(flatten)]
+    #[surreal(wrap)]
     pub fields: serde_json::Map<String, serde_json::Value>,
 }
 
 impl InstInfoRecord {
     pub async fn query_by_id(info_id: &Thing) -> anyhow::Result<Option<InstInfoRecord>> {
         use crate::SUL_DB;
-        let sql = format!("select * from {};", info_id);
+        let sql = format!("select * from {};", info_id.to_sql());
         let mut response = SUL_DB.query(sql).await?;
         let mut rows: Vec<InstInfoRecord> = response.take(0)?;
         Ok(rows.pop())
@@ -734,14 +746,14 @@ impl InstInfoRecord {
 
 fn export_inst_info_record(row: &InstInfoRecord) -> String {
     let mut parts = Vec::new();
-    parts.push(format!("id: {}", row.id));
+    parts.push(format!("id: {}", row.id.to_sql()));
     for (k, v) in &row.fields {
         parts.push(format!("{}: {}", k, v));
     }
     format!("INSERT IGNORE INTO inst_info {{ {} }};", parts.join(", "))
 }
 
-#[derive(Serialize, Deserialize, Clone, Debug)]
+#[derive(Serialize, Deserialize, Clone, Debug, surrealdb::types::SurrealValue)]
 struct GeoRelate {
     pub id: Thing,
     pub r#in: Thing,
@@ -758,7 +770,7 @@ impl GeoRelate {
     /// 根据 inst_info ID 查询所有相关的 geo_relate 记录
     pub async fn query_by_inst_info_id(inst_info_id: &Thing) -> anyhow::Result<Vec<GeoRelate>> {
         use crate::SUL_DB;
-        let sql = format!("select * from {}->geo_relate;", inst_info_id);
+        let sql = format!("select * from {}->geo_relate;", inst_info_id.to_sql());
         let mut response = SUL_DB.query(sql).await?;
         let rows: Vec<GeoRelate> = response.take(0)?;
         Ok(rows)
@@ -769,12 +781,13 @@ fn export_geo_relate(rel: &GeoRelate) -> String {
     let pts = rel
         .pts
         .iter()
-        .map(|t| t.to_string())
+        .map(|t| t.to_sql())
         .collect::<Vec<_>>()
         .join(", ");
     format!(
         "INSERT RELATION INTO geo_relate {{ id: {}, in: {}, out: {}, geo_type: \"{}\", geom_refno: {}, pts: [{}], trans: {}, visible: {} }};",
-        rel.id, rel.r#in, rel.out, rel.geo_type, rel.geom_refno, pts, rel.trans, rel.visible
+        rel.id.to_sql(), rel.r#in.to_sql(), rel.out.to_sql(), rel.geo_type,
+        rel.geom_refno.to_sql(), pts, rel.trans.to_sql(), rel.visible
     )
 }
 

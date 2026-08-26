@@ -19,13 +19,15 @@ use serde_with::DisplayFromStr;
 use std::collections::{BTreeMap, HashMap};
 use surrealdb::engine::any::Any;
 use surrealdb::Surreal;
-use surrealdb::sql::Thing;
 use crate::ssc_setting::PbsElement;
-
+use surrealdb::types::{RecordId as Thing, ToSql};
 
 ///查询pbs children 数据
 pub async fn get_children_pbs_nodes(id: &Thing) -> anyhow::Result<Vec<PbsElement>> {
-    let sql = format!("select *, array::len(<-pbs_owner) as children_cnt from (select value in from pbs:⟨{}⟩<-pbs_owner);", id.id.to_raw());
+    let sql = format!(
+        "select *, array::len(<-pbs_owner) as children_cnt from (select value in from pbs:⟨{}⟩<-pbs_owner);",
+        id.key.to_sql()
+    );
     // dbg!(&sql);
     let mut response = SUL_DB
         .query(sql)
@@ -34,5 +36,4 @@ pub async fn get_children_pbs_nodes(id: &Thing) -> anyhow::Result<Vec<PbsElement
     let nodes: Vec<PbsElement> = response.take(0)?;
     Ok(nodes)
 }
-
 

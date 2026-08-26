@@ -29,7 +29,19 @@ use sea_query::{Alias, MysqlQueryBuilder};
 use serde_derive::{Deserialize, Serialize};
 use std::collections::{BTreeMap, HashMap};
 use std::str::FromStr;
-use surrealdb::sql::{Id, Thing};
+use surrealdb::types::{RecordId as Thing, RecordIdKey as Id, SurrealValue, Value};
+
+fn decode_value<T: SurrealValue + Default>(value: Value) -> T {
+    T::from_value(value).unwrap_or_default()
+}
+
+fn decode_array(value: Value) -> Vec<Value> {
+    match value {
+        Value::Array(values) => values.into_inner(),
+        Value::None | Value::Null => Vec::new(),
+        value => vec![value],
+    }
+}
 
 ///带名称的属性map
 #[derive(
@@ -88,12 +100,12 @@ impl From<SurlValue> for NamedAttrMap {
     fn from(s: SurlValue) -> Self {
         let mut map = BTreeMap::default();
         //需要根据类型来判断转换成相应的类型
-        if let surrealdb::sql::Value::Object(o) = s {
-            if let Some(SurlValue::Strand(name)) = o.get("TYPE") {
+        if let Value::Object(o) = s {
+            if let Some(SurlValue::String(name)) = o.get("TYPE") {
                 let type_name = name.to_string().clone();
                 let db_info = get_default_pdms_db_info();
                 {
-                    for (k, v) in o.0 {
+                    for (k, v) in o.into_inner() {
                         // if k.as_str() == "WELDTY" {
                         //     dbg!(&k);
                         // }
@@ -101,13 +113,13 @@ impl From<SurlValue> for NamedAttrMap {
                         if k == "PGNO" {
                             map.insert(
                                 k.clone(),
-                                NamedAttrValue::IntegerType(v.try_into().unwrap_or_default()),
+                                NamedAttrValue::IntegerType(decode_value(v)),
                             );
                             continue;
                         } else if k == "SESNO" {
                             map.insert(
                                 k.clone(),
-                                NamedAttrValue::IntegerType(v.try_into().unwrap_or_default()),
+                                NamedAttrValue::IntegerType(decode_value(v)),
                             );
                             continue;
                         }
@@ -128,40 +140,38 @@ impl From<SurlValue> for NamedAttrMap {
                         };
                         let named_value = match default_val {
                             crate::AttrVal::IntegerType(_) => {
-                                NamedAttrValue::IntegerType(v.try_into().unwrap_or_default())
+                                NamedAttrValue::IntegerType(decode_value(v))
                             }
                             crate::AttrVal::StringType(_) => {
-                                NamedAttrValue::StringType(v.try_into().unwrap_or_default())
+                                NamedAttrValue::StringType(decode_value(v))
                             }
                             crate::AttrVal::WordType(_) => {
                                 // dbg!((&k, &v));
                                 let named_value = match &v {
-                                    SurlValue::Strand(s) => NamedAttrValue::WordType(s.to_string()),
+                                    SurlValue::String(s) => NamedAttrValue::WordType(s.to_string()),
                                     SurlValue::Number(i) => NamedAttrValue::WordType(db1_dehash(
-                                        v.try_into().unwrap_or_default()
+                                        i.to_int().unwrap_or_default() as u32,
                                     )),
                                     _ => NamedAttrValue::WordType("".to_string()), // Default case if type is unexpected
                                 };
                                 named_value
                             }
                             crate::AttrVal::DoubleType(_) => {
-                                NamedAttrValue::F32Type(v.try_into().unwrap_or_default())
+                                NamedAttrValue::F32Type(decode_value(v))
                             }
                             crate::AttrVal::DoubleArrayType(_) => {
-                                let v: Vec<surrealdb::sql::Value> =
-                                    v.try_into().unwrap_or_default();
+                                let v = decode_array(v);
                                 NamedAttrValue::F32VecType(
                                     v.into_iter()
-                                        .map(|x| f32::try_from(x).unwrap_or_default())
+                                        .map(decode_value)
                                         .collect(),
                                 )
                             }
                             crate::AttrVal::Vec3Type(_) => {
-                                let v: Vec<surrealdb::sql::Value> =
-                                    v.try_into().unwrap_or_default();
+                                let v = decode_array(v);
                                 let p = v
                                     .into_iter()
-                                    .map(|x| f32::try_from(x).unwrap_or_default())
+                                    .map(decode_value)
                                     .collect::<Vec<_>>();
                                 if p.len() < 3 {
                                     //如果不够3个，就补0，错误处理？
@@ -171,38 +181,35 @@ impl From<SurlValue> for NamedAttrMap {
                                 }
                             }
                             crate::AttrVal::StringArrayType(_) => {
-                                let v: Vec<surrealdb::sql::Value> =
-                                    v.try_into().unwrap_or_default();
+                                let v = decode_array(v);
                                 NamedAttrValue::StringArrayType(
                                     v.into_iter()
-                                        .map(|x| String::try_from(x).unwrap_or_default())
+                                        .map(decode_value)
                                         .collect(),
                                 )
                             }
                             crate::AttrVal::BoolArrayType(_) => {
-                                let v: Vec<surrealdb::sql::Value> =
-                                    v.try_into().unwrap_or_default();
+                                let v = decode_array(v);
                                 NamedAttrValue::BoolArrayType(
                                     v.into_iter()
-                                        .map(|x| bool::try_from(x).unwrap_or_default())
+                                        .map(decode_value)
                                         .collect(),
                                 )
                             }
                             crate::AttrVal::IntArrayType(_) => {
-                                let v: Vec<surrealdb::sql::Value> =
-                                    v.try_into().unwrap_or_default();
+                                let v = decode_array(v);
                                 NamedAttrValue::IntArrayType(
                                     v.into_iter()
-                                        .map(|x| i32::try_from(x).unwrap_or_default())
+                                        .map(decode_value)
                                         .collect(),
                                 )
                             }
                             crate::AttrVal::BoolType(_) => {
-                                NamedAttrValue::BoolType(v.try_into().unwrap_or_default())
+                                NamedAttrValue::BoolType(decode_value(v))
                             }
                             crate::AttrVal::RefU64Type(_) | crate::AttrVal::ElementType(_) => {
-                                if let SurlValue::Thing(record) = v {
-                                    if matches!(record.id, Id::Array(_)) {
+                                if let SurlValue::RecordId(record) = v {
+                                    if matches!(record.key, Id::Array(_)) {
                                         NamedAttrValue::RefnoEnumType(record.into())
                                     } else {
                                         NamedAttrValue::RefU64Type(record.into())
@@ -212,12 +219,11 @@ impl From<SurlValue> for NamedAttrMap {
                                 }
                             }
                             crate::AttrVal::RefU64Array(_) => {
-                                let v: Vec<surrealdb::sql::Value> =
-                                    v.try_into().unwrap_or_default();
+                                let v = decode_array(v);
                                 NamedAttrValue::RefU64Array(
                                     v.into_iter()
                                         .map(|x| {
-                                            if let SurlValue::Thing(id) = x {
+                                            if let SurlValue::RecordId(id) = x {
                                                 id.into()
                                             } else {
                                                 Default::default()

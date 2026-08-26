@@ -13,8 +13,9 @@ use serde_derive::{Deserialize, Serialize};
 use serde_json::Value;
 use std::collections::HashMap;
 use surrealdb::engine::any::Any;
-use surrealdb::sql::Thing;
 use surrealdb::Surreal;
+use surrealdb::types::RecordId as Thing;
+use surrealdb::types::ToSql;
 use tokio::task::{self, JoinHandle};
 
 lazy_static::lazy_static!{
@@ -183,14 +184,14 @@ fn filter_equi_children(datas: Vec<Vec<Vec<Thing>>>) -> Vec<Vec<String>> {
     for data in datas {
         let filtered_data: Vec<Vec<String>> = data
             .into_iter()
-            .filter(|inner_vec| inner_vec.iter().all(|s| s.tb == "BOX"))
+            .filter(|inner_vec| inner_vec.iter().all(|s| s.table.as_str() == "BOX"))
             .filter(|inner_vec| {
                 let count = inner_vec.iter().count();
                 count == 3 || count == 4
             })
             .map(|vec| {
                 vec.iter()
-                    .map(|thing| format!("BOX:{}", thing.id.to_string()))
+                    .map(|thing| format!("BOX:{}", thing.key.to_sql()))
                     .collect::<Vec<String>>()
             })
             .collect();

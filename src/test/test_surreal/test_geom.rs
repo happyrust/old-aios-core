@@ -2,7 +2,7 @@ use crate::{rs_surreal, tool::math_tool::quat_to_pdms_ori_xyz_str, RefU64};
 
 use glam::Quat;
 use std::{sync::Arc, time::Instant};
-use surrealdb::sql::Thing;
+use surrealdb::types::RecordId as Thing;
 
 #[tokio::test]
 async fn test_query_inst_refnos() -> anyhow::Result<()> {

@@ -57,8 +57,8 @@ use surrealdb::opt::auth::Root;
 use surrealdb::Surreal;
 
 // pub type SurlValue = surrealdb::Value;
-pub type SurlValue = surrealdb::sql::Value;
-pub type SurlStrand = surrealdb::sql::Strand;
+pub type SurlValue = surrealdb::types::Value;
+pub type SurlStrand = String;
 pub static SUL_DB: Lazy<Surreal<Any>> = Lazy::new(Surreal::init);
 pub static SECOND_SUL_DB: Lazy<Surreal<Any>> = Lazy::new(Surreal::init);
 pub static KV_DB: Lazy<Surreal<Any>> = Lazy::new(Surreal::init);
@@ -80,7 +80,12 @@ pub async fn connect_surdb(
         .with_capacity(1000)
         .await?;
     SUL_DB.use_ns(ns).use_db(db).await?;
-    SUL_DB.signin(Root { username, password }).await?;
+    SUL_DB
+        .signin(Root {
+            username: username.to_owned(),
+            password: password.to_owned(),
+        })
+        .await?;
     Ok(())
 }
 
@@ -93,7 +98,12 @@ pub async fn connect_kvdb(
 ) -> Result<(), surrealdb::Error> {
     SUL_DB.connect(conn_str).with_capacity(1000).await?;
     SUL_DB.use_ns(ns).use_db(db).await?;
-    SUL_DB.signin(Root { username, password }).await?;
+    SUL_DB
+        .signin(Root {
+            username: username.to_owned(),
+            password: password.to_owned(),
+        })
+        .await?;
     Ok(())
 }
 

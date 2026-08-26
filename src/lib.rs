@@ -231,8 +231,8 @@ pub async fn init_test_surreal() -> Result<DbOption, HandleError> {
     // Sign in
     SUL_DB
         .signin(Root {
-            username: &db_option.v_user,
-            password: &db_option.v_password,
+            username: db_option.v_user.clone(),
+            password: db_option.v_password.clone(),
         })
         .await
         .map_err(|e| HandleError::SurrealError {
@@ -267,8 +267,8 @@ pub async fn init_surreal() -> anyhow::Result<()> {
         .await?;
     SUL_DB
         .signin(Root {
-            username: &db_option.v_user,
-            password: &db_option.v_password,
+            username: db_option.v_user.clone(),
+            password: db_option.v_password.clone(),
         })
         .await?;
     // Define common functions
@@ -297,8 +297,8 @@ pub async fn init_second_unit_surreal() -> anyhow::Result<()> {
         .await?;
     SECOND_SUL_DB
         .signin(Root {
-            username: &db_option.v_user,
-            password: &db_option.v_password,
+            username: db_option.v_user.clone(),
+            password: db_option.v_password.clone(),
         })
         .await?;
     Ok(())
@@ -312,8 +312,8 @@ pub async fn b_connected_second_unit() -> anyhow::Result<()> {
     let db_option: SecondUnitDbOption = s.try_deserialize()?;
     SECOND_SUL_DB
         .signin(Root {
-            username: &db_option.v_user,
-            password: &db_option.v_password,
+            username: db_option.v_user.clone(),
+            password: db_option.v_password.clone(),
         })
         .await?;
     Ok(())
@@ -355,8 +355,8 @@ pub async fn init_demo_test_surreal() -> Result<DbOption, HandleError> {
     // Sign in
     SUL_DB
         .signin(Root {
-            username: &db_option.v_user,
-            password: &db_option.v_password,
+            username: db_option.v_user.clone(),
+            password: db_option.v_password.clone(),
         })
         .await
         .map_err(|e| HandleError::SurrealError {

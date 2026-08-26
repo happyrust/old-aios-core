@@ -33,13 +33,22 @@ use serde_with::DisplayFromStr;
 use std::collections::{BTreeMap, HashMap};
 use anyhow::anyhow;
 use surrealdb::engine::any::Any;
-use surrealdb::sql::{Datetime, Value};
 use surrealdb::Surreal;
+use surrealdb::types::{Datetime, Object, SurrealValue, Value};
 
 #[derive(Clone, Debug, Default, Deserialize)]
-struct KV<K, V> {
+#[derive(surrealdb::types::SurrealValue)]
+struct KV<K: SurrealValue, V: SurrealValue> {
     k: K,
     v: V,
+}
+
+fn value_into_vec(value: Value) -> Vec<Value> {
+    match value {
+        Value::Array(values) => values.into_inner(),
+        Value::None | Value::Null => Vec::new(),
+        value => vec![value],
+    }
 }
 
 ///通过surql查询pe数据。
@@ -216,8 +225,8 @@ pub async fn get_ancestor_attmaps_on(
 ) -> anyhow::Result<Vec<NamedAttrMap>> {
     let sql = format!("return fn::ancestor({}).refno.*;", refno.to_pe_key());
     let mut response = db.query(sql).await?;
-    let o: surrealdb::Value = response.take(0)?;
-    let os: Vec<SurlValue> = o.into_inner().try_into().unwrap();
+    let o: Value = response.take(0)?;
+    let os = value_into_vec(o);
     let named_attmaps: Vec<NamedAttrMap> = os.into_iter().map(|x| x.into()).collect();
     Ok(named_attmaps)
 }
@@ -337,7 +346,7 @@ pub async fn get_index_by_noun_in_parent(
     Ok(type_name)
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, surrealdb::types::SurrealValue)]
 pub struct RefnoDatetime {
     pub refno: RefnoEnum,
     pub dt: Datetime,
@@ -613,7 +622,7 @@ pub async fn get_named_attmap_on(
 ) -> anyhow::Result<NamedAttrMap> {
     let sql = format!(r#"(select * from {}.refno)[0];"#, refno.to_pe_key());
     let mut response = db.query(sql).await?;
-    let o: Value = response.take::<surrealdb::Value>(0)?.into_inner();
+    let o: Value = response.take(0)?;
     if matches!(o, Value::None) {
         return Err(anyhow!("staging read miss: named attributes for {refno}"));
     }
@@ -625,8 +634,8 @@ pub async fn get_named_attmap_on(
 async fn get_named_attmap_cached(refno: RefnoEnum) -> anyhow::Result<NamedAttrMap> {
     let sql = format!(r#"(select * from {}.refno)[0];"#, refno.to_pe_key());
     let mut response = SUL_DB.query(sql).await?;
-    let o: surrealdb::Value = response.take(0)?;
-    Ok(o.into_inner().into())
+    let o: Value = response.take(0)?;
+    Ok(o.into())
 }
 
 /// Query an implicit element whose common `pe` row is absent.
@@ -646,8 +655,8 @@ pub async fn get_implicit_named_attmap(
         refno.to_pe_key()
     );
     let mut response = SUL_DB.query(sql).await?;
-    let o: surrealdb::Value = response.take(0)?;
-    Ok(o.into_inner().into())
+    let o: Value = response.take(0)?;
+    Ok(o.into())
 }
 
 pub async fn get_implicit_named_attmap_on(
@@ -661,7 +670,7 @@ pub async fn get_implicit_named_attmap_on(
         refno.to_pe_key()
     );
     let mut response = db.query(sql).await?;
-    let o: Value = response.take::<surrealdb::Value>(0)?.into_inner();
+    let o: Value = response.take(0)?;
     if matches!(o, Value::None) {
         return Err(anyhow!(
             "staging read miss: implicit {noun} attributes for {refno}"
@@ -742,15 +751,15 @@ pub(crate) async fn get_named_attmap_with_uda_on(
     );
     let mut response = db.query(sql).await?;
     //获得uda的 map
-    let o: surrealdb::Value = response.take(0)?;
-    let mut named_attmap: NamedAttrMap = o.into_inner().into();
-    let o: surrealdb::Value = response.take(1)?;
-    let array: Vec<SurlValue> = o.into_inner().try_into().unwrap();
-    let uda_kvs: Vec<surrealdb::sql::Object> =
-        array.into_iter().map(|x| x.try_into().unwrap()).collect();
+    let o: Value = response.take(0)?;
+    let mut named_attmap: NamedAttrMap = o.into();
+    let o: Value = response.take(1)?;
+    let array = value_into_vec(o);
+    let uda_kvs: Vec<Object> =
+        array.into_iter().map(|x| Object::from_value(x).unwrap()).collect();
     for map in uda_kvs {
-        let uname: String = map.get("u").unwrap().clone().try_into().unwrap();
-        let utype: String = map.get("t").unwrap().clone().try_into().unwrap();
+        let uname = String::from_value(map.get("u").unwrap().clone()).unwrap();
+        let utype = String::from_value(map.get("t").unwrap().clone()).unwrap();
         if uname.as_str() == ":NONE" || uname.as_str() == ":unset" || uname.is_empty() {
             continue;
         }
@@ -759,13 +768,13 @@ pub(crate) async fn get_named_attmap_with_uda_on(
         let att_value = NamedAttrValue::from((utype.as_str(), v));
         named_attmap.insert(uname, att_value);
     }
-    let o: surrealdb::Value = response.take(2)?;
-    let array: Vec<SurlValue> = o.into_inner().try_into().unwrap();
-    let overwrite_kvs: Vec<surrealdb::sql::Object> =
-        array.into_iter().map(|x| x.try_into().unwrap()).collect();
+    let o: Value = response.take(2)?;
+    let array = value_into_vec(o);
+    let overwrite_kvs: Vec<Object> =
+        array.into_iter().map(|x| Object::from_value(x).unwrap()).collect();
     for map in overwrite_kvs {
-        let uname: String = map.get("u").unwrap().clone().try_into().unwrap();
-        let utype: String = map.get("t").unwrap().clone().try_into().unwrap();
+        let uname = String::from_value(map.get("u").unwrap().clone()).unwrap();
+        let utype = String::from_value(map.get("t").unwrap().clone()).unwrap();
         if uname.as_str() == ":NONE" || uname.as_str() == ":unset" || uname.is_empty() {
             continue;
         }
@@ -806,8 +815,8 @@ pub async fn get_cat_attmap(refno: RefnoEnum) -> anyhow::Result<NamedAttrMap> {
     // println!("sql is {}", &sql);
     let mut response = SUL_DB.query(&sql).await?;
     // dbg!(&response);
-    let o: surrealdb::Value = response.take(0)?;
-    let named_attmap: NamedAttrMap = o.into_inner().into();
+    let o: Value = response.take(0)?;
+    let named_attmap: NamedAttrMap = o.into();
     Ok(named_attmap)
 }
 
@@ -831,9 +840,9 @@ pub async fn get_children_named_attmaps(refno: RefnoEnum) -> anyhow::Result<Vec<
     );
     // println!("get_children_named_attmaps sql is {}", &sql);
     let mut response = SUL_DB.query(sql).await?;
-    let o: surrealdb::Value = response.take(0)?;
+    let o: Value = response.take(0)?;
     // dbg!(&o);
-    let os: Vec<SurlValue> = o.into_inner().try_into().unwrap();
+    let os = value_into_vec(o);
     // dbg!(&os);
     let named_attmaps: Vec<NamedAttrMap> = os.into_iter().map(|x| x.into()).collect();
     Ok(named_attmaps)
@@ -920,8 +929,11 @@ pub async fn query_filter_children_atts(
         )
     };
     let mut response = SUL_DB.query(sql).await?;
-    let value: surrealdb::Value = response.take(0)?;
-    let atts: Vec<surrealdb::sql::Value> = value.into_inner().try_into().unwrap();
+    let value: Value = response.take(0)?;
+    let atts = match value {
+        Value::Array(values) => values.into_inner(),
+        value => vec![value],
+    };
     Ok(atts.into_iter().map(|x| x.into()).collect())
 }
 
@@ -1136,7 +1148,7 @@ pub async fn query_group_by_cata_hash(
 }
 
 #[serde_as]
-#[derive(Debug, Default, Serialize, Deserialize)]
+#[derive(Debug, Default, Serialize, Deserialize, surrealdb::types::SurrealValue)]
 pub struct PdmsSpreName {
     #[serde_as(as = "DisplayFromStr")]
     pub refno: RefU64,
@@ -1186,9 +1198,9 @@ pub async fn query_single_by_paths(
     #[cfg(feature = "debug_model")]
     println!("query_single_by_paths Sql is {}", sql);
     let mut response = SUL_DB.query(sql).await?;
-    let r: surrealdb::Value = response.take(0)?;
+    let r: Value = response.take(0)?;
     // dbg!(&r);
-    let mut map: NamedAttrMap = r.into_inner().into();
+    let mut map: NamedAttrMap = r.into();
     // dbg!(&map);
     //只保留 fileds 里的数据
     if !fields.is_empty() {
@@ -1395,7 +1407,7 @@ pub async fn query_his_dates(
     );
     // println!("query_his_dates sql: {}", &sql);
     let mut response = SUL_DB.query(&sql).await?;
-    let r: Vec<KV<RefnoEnum, surrealdb::sql::Datetime>> = response.take(0)?;
+    let r: Vec<KV<RefnoEnum, Datetime>> = response.take(0)?;
     Ok(r.into_iter().map(|kv| (kv.k, kv.v.naive_local())).collect())
 }
 

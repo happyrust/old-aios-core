@@ -201,7 +201,7 @@ impl FromStr for RefU64 {
 
 impl From<Thing> for RefU64 {
     fn from(thing: Thing) -> Self {
-        thing.id.to_raw().as_str().into()
+        thing.key.to_string().as_str().into()
     }
 }
 
@@ -348,7 +348,7 @@ impl RefU64 {
 
     #[inline]
     pub fn to_pe_thing(&self) -> Thing {
-        ("pe".to_string(), self.to_key()).into()
+        Thing::new("pe", self.to_key())
     }
 
     #[inline]
@@ -368,7 +368,7 @@ impl RefU64 {
 
     #[inline]
     pub fn to_pbs_thing(&self) -> Thing {
-        ("pbs".to_string(), self.to_string()).into()
+        Thing::new("pbs", self.to_string())
     }
 
     pub fn to_type_key(&self, noun: &str) -> String {
@@ -486,7 +486,7 @@ use anyhow::anyhow;
 #[cfg(feature = "sea-orm")]
 use sea_orm::sea_query::ValueType;
 use std::string::String;
-use surrealdb::sql::Thing;
+use surrealdb::types::RecordId as Thing;
 
 impl Into<String> for RefI32Tuple {
     fn into(self) -> String {
@@ -839,7 +839,7 @@ impl From<(&str, u32)> for RefnoEnum {
 impl From<Thing> for RefnoEnum {
     fn from(value: Thing) -> Self {
         //检查是否是 array
-        if let surrealdb::sql::Id::Array(array) = &value.id {
+        if let surrealdb::types::RecordIdKey::Array(array) = &value.key {
             let refno = array.get(0).cloned().unwrap_or_default().to_string();
             let sesno: u32 = array
                 .get(1)
@@ -849,7 +849,7 @@ impl From<Thing> for RefnoEnum {
                 .unwrap_or_default();
             Self::SesRef(RefnoSesno::new(refno.into(), sesno))
         } else {
-            Self::Refno(RefU64::from_str(&value.id.to_raw()).unwrap_or_default())
+            Self::Refno(RefU64::from_str(&value.key.to_string()).unwrap_or_default())
         }
     }
 }

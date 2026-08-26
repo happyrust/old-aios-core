@@ -3,12 +3,13 @@ use crate::parsed_data::{CateAxisParam};
 use crate::types::*;
 use serde::{Serialize, Deserialize};
 use serde_with::serde_as;
+use surrealdb::types::SurrealValue;
 //
 //
 
 
 #[serde_as]
-#[derive(Serialize, Deserialize, Clone, Debug, Default)]
+#[derive(Serialize, Deserialize, Clone, Debug, Default, surrealdb::types::SurrealValue)]
 pub struct InstPointMap {
     pub refno: RefnoEnum,
     pub att_type: String,
@@ -49,4 +50,3 @@ fn test_de_ser() {
 //         }
 //     }
 // }
-

@@ -1,8 +1,9 @@
 use crate::{RefnoEnum, SUL_DB};
 use anyhow::Result;
 use serde::Deserialize;
+use surrealdb::types::SurrealValue;
 
-#[derive(Deserialize)]
+#[derive(Deserialize, surrealdb::types::SurrealValue)]
 struct CountResult {
     count: usize,
 }

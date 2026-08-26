@@ -93,13 +93,13 @@ impl AttributeQueryService {
                 QueryErrorHandler::log_query_execution(&sql, execution_time);
 
                 // 获得 UDA 的 map
-                let o: surrealdb::sql::Value = response.take(0)?;
+                let o: surrealdb::types::Value = response.take(0)?;
                 let mut named_attmap: NamedAttrMap = o.into_inner().into();
 
                 // 处理 UDA 数据
-                let o: surrealdb::sql::Value = response.take(1)?;
+                let o: surrealdb::types::Value = response.take(1)?;
                 let array: Vec<SurlValue> = o.into_inner().try_into().unwrap();
-                let uda_kvs: Vec<surrealdb::sql::Object> =
+                let uda_kvs: Vec<surrealdb::types::Object> =
                     array.into_iter().map(|x| x.try_into().unwrap()).collect();
 
                 for map in uda_kvs {
@@ -114,9 +114,9 @@ impl AttributeQueryService {
                 }
 
                 // 处理覆盖数据
-                let o: surrealdb::sql::Value = response.take(2)?;
+                let o: surrealdb::types::Value = response.take(2)?;
                 let array: Vec<SurlValue> = o.into_inner().try_into().unwrap();
-                let overwrite_kvs: Vec<surrealdb::sql::Object> =
+                let overwrite_kvs: Vec<surrealdb::types::Object> =
                     array.into_iter().map(|x| x.try_into().unwrap()).collect();
 
                 for map in overwrite_kvs {

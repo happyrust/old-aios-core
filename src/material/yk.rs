@@ -20,6 +20,7 @@ use std::collections::HashMap;
 use std::str::FromStr;
 use surrealdb::engine::any::Any;
 use surrealdb::Surreal;
+use surrealdb::types::SurrealValue;
 use tokio::task::{self, JoinHandle};
 use anyhow::anyhow;
 use serde_json::Value;
@@ -452,7 +453,7 @@ pub async fn get_yk_equi_list_material(
     Ok(data)
 }
 
-#[derive(Serialize, Deserialize, Clone, Debug, Default, PartialEq)]
+#[derive(Serialize, Deserialize, Clone, Debug, Default, PartialEq, surrealdb::types::SurrealValue)]
 struct BelongGyValvResponse {
     pub id: RefnoEnum,
     pub noun: String,
@@ -585,4 +586,3 @@ async fn test_save_yk_material_dzcl() -> anyhow::Result<()> {
     futures::future::join_all(handles).await;
     Ok(())
 }
-

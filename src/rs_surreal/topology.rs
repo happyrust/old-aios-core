@@ -1,10 +1,10 @@
 use crate::{rs_surreal::SUL_DB, RefU64};
 use anyhow::Result;
 use serde::{Deserialize, Serialize};
-use surrealdb::sql::Thing;
+use surrealdb::types::{RecordId as Thing, SurrealValue};
 
 /// Represents a previous connection of a pipe element
-#[derive(Default, Debug, Serialize, Deserialize)]
+#[derive(Default, Debug, Serialize, Deserialize, surrealdb::types::SurrealValue)]
 pub struct PrevConnection {
     pub id: RefU64,
     pub prev_full_name: String,
@@ -15,7 +15,7 @@ pub struct PrevConnection {
 }
 
 /// Represents a next connection of a pipe element
-#[derive(Default, Debug, Serialize, Deserialize)]
+#[derive(Default, Debug, Serialize, Deserialize, surrealdb::types::SurrealValue)]
 pub struct NextConnection {
     pub id: RefU64,
     pub next_full_name: String,

@@ -2,7 +2,7 @@ use crate::{rs_surreal, SUL_DB, tool::math_tool};
 
 use std::sync::Arc;
 use glam::Mat3;
-use surrealdb::sql::Thing;
+use surrealdb::types::RecordId as Thing;
 use crate::room::data::RoomElement;
 
 #[tokio::test]

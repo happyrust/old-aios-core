@@ -13,6 +13,7 @@ use smol_str::ToSmolStr;
 use std::collections::{BTreeMap, HashMap};
 use std::str::FromStr;
 use std::sync::Mutex;
+use surrealdb::types::{SerdeWrapper, SurrealValue};
 
 //获得参考号对应的inst keys
 pub fn get_inst_relate_keys(refnos: &[RefnoEnum]) -> String {
@@ -44,7 +45,11 @@ pub async fn fetch_loops_and_height(refno: RefnoEnum) -> anyhow::Result<(Vec<Vec
     );
     // println!(" fetch_loops_and_height sql is {}", &sql);
     let mut response = super::staging::data_db().query(&sql).await.unwrap();
-    let points: Vec<Vec<Vec3>> = response.take(0)?;
+    let points = response
+        .take::<Vec<SerdeWrapper<Vec<Vec3>>>>(0)?
+        .into_iter()
+        .map(|points| points.0)
+        .collect();
     let height: Option<f32> = response.take(1)?;
 
     Ok((points, height.unwrap_or_default()))
@@ -110,7 +115,7 @@ pub async fn query_la_axis_attmap(
 }
 
 /// 参考号具有正负实体映射关系的信息结构体
-#[derive(Serialize, Deserialize, Debug)]
+#[derive(Serialize, Deserialize, Debug, surrealdb::types::SurrealValue)]
 pub struct RefnoHasNegPosInfo {
     // pub refno: RefnoEnum,
     /// 正实体的参考号
@@ -290,9 +295,11 @@ async fn test_query_refnos_point_map() -> anyhow::Result<()> {
 
 //query_ptset
 /// 查询RefnoEnum对应的点集合
-#[derive(Debug, Serialize, Deserialize, Default)]
+#[derive(Debug, Serialize, Deserialize, Default, surrealdb::types::SurrealValue)]
 pub struct PtsetResult {
+    #[surreal(wrap)]
     pub transform: Transform,
+    #[surreal(wrap)]
     pub points: Vec<Vec3>,
 }
 
