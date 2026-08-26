@@ -19,6 +19,9 @@ debug_spatial = []
 web = ["render"]
 sql = []
 hh = []
+# 让 `get_default_pdms_db_info()` 改从工作目录读 all_attr_info.json，而不是把它
+# `include_str!` 进二进制。这张表随项目维护，换一份不该要求重新编译。
+load_file = []
 
 
 [dependencies]

@@ -147,19 +147,26 @@ pub fn get_default_pdms_db_info() -> &'static PdmsDatabaseInfo {
     INSTANCE.get_or_init(|| {
         //会动态维护这个json，所以需要通过文件来加载
         //使用feature，来选择是否加载文件，还是使用include_str
-        let mut string = String::new();
         #[cfg(feature = "load_file")]
-        {
-            let mut file = File::open("all_attr_info.json").unwrap();
-            file.read_to_string(&mut string);
-        }
+        let (source, string) = {
+            let path = "all_attr_info.json";
+            let string = std::fs::read_to_string(path).unwrap_or_else(|err| {
+                panic!(
+                    "读取 {path} 失败（相对当前工作目录 {:?}）：{err}",
+                    std::env::current_dir()
+                )
+            });
+            (path, string)
+        };
 
         #[cfg(not(feature = "load_file"))]
-        {
-            string = include_str!("../all_attr_info.json").to_string();
-        }
+        let (source, string) = (
+            "<include_str! all_attr_info.json>",
+            include_str!("../all_attr_info.json").to_string(),
+        );
 
-        let mut db_info = serde_json::from_str::<PdmsDatabaseInfo>(&string).unwrap();
+        let mut db_info = serde_json::from_str::<PdmsDatabaseInfo>(&string)
+            .unwrap_or_else(|err| panic!("解析 {source} 失败：{err}"));
         db_info.fill_named_map();
         // dbinfo.fix();
         // dbinfo.save(None);
