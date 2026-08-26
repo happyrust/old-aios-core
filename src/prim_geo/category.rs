@@ -1,4 +1,5 @@
 use crate::parsed_data::geo_params_data::CateGeoParam;
+use crate::prim_geo::LCylinder;
 use crate::prim_geo::ctorus::SCTorus;
 use crate::prim_geo::cylinder::SCylinder;
 use crate::prim_geo::dish::Dish;
@@ -9,7 +10,6 @@ use crate::prim_geo::rtorus::SRTorus;
 use crate::prim_geo::sbox::SBox;
 use crate::prim_geo::snout::LSnout;
 use crate::prim_geo::sphere::Sphere;
-use crate::prim_geo::LCylinder;
 use crate::shape::pdms_shape::BrepShapeTrait;
 use crate::types::*;
 use bevy_math::prelude::*;
@@ -35,6 +35,8 @@ pub struct CateBrepShape {
     pub pts: Vec<i32>,
     //是否要和design发生负实体运算
     pub is_ngmr: bool,
+    /// 主几何集合中以 N* noun 声明、只参与所属实例布尔运算的负实体。
+    pub is_instance_negative: bool,
 }
 
 ///转换成brep shape
@@ -69,18 +71,18 @@ pub fn convert_to_brep_shapes(geom: &CateGeoParam) -> Option<CateBrepShape> {
             let mut rotation = Quat::IDENTITY;
             let tmp_axis = z_axis.cross(Vec3::Z).normalize_or_zero();
             // 有发生旋转，如果没有旋转，直接使用默认坐标系
-            if tmp_axis.is_normalized(){
+            if tmp_axis.is_normalized() {
                 let mut ref_axis = z_axis.cross(x_axis).normalize_or_zero();
                 //如果求不出来y，就要按 z_axis 和 x_axis 结合，需要变通的去求方位
-                if !ref_axis.is_normalized(){
+                if !ref_axis.is_normalized() {
                     x_axis = tmp_axis;
                     y_axis = z_axis.cross(x_axis).normalize_or_zero();
-                    if !x_axis.is_normalized(){
+                    if !x_axis.is_normalized() {
                         println!("Pyramid 求方位失败。{:?}", (x_axis, y_axis, z_axis));
                         return None;
                     }
                     // dbg!((x_axis, y_axis, z_axis));
-                }else{
+                } else {
                     y_axis = ref_axis;
                     x_axis = y_axis.cross(z_axis).normalize_or_zero();
                     // dbg!((x_axis, y_axis, z_axis));
@@ -123,6 +125,7 @@ pub fn convert_to_brep_shapes(geom: &CateGeoParam) -> Option<CateBrepShape> {
                 shape_err: None,
                 pts,
                 is_ngmr: false,
+                is_instance_negative: false,
             });
         }
         CateGeoParam::Torus(d) => {
@@ -158,6 +161,7 @@ pub fn convert_to_brep_shapes(geom: &CateGeoParam) -> Option<CateBrepShape> {
                     shape_err: None,
                     pts,
                     is_ngmr: false,
+                    is_instance_negative: false,
                 });
             }
         }
@@ -196,6 +200,7 @@ pub fn convert_to_brep_shapes(geom: &CateGeoParam) -> Option<CateBrepShape> {
                     shape_err: None,
                     pts,
                     is_ngmr: false,
+                    is_instance_negative: false,
                 });
             }
         }
@@ -217,6 +222,7 @@ pub fn convert_to_brep_shapes(geom: &CateGeoParam) -> Option<CateBrepShape> {
                 shape_err: None,
                 pts: Default::default(),
                 is_ngmr: false,
+                is_instance_negative: false,
             });
         }
         CateGeoParam::Dish(d) => {
@@ -262,6 +268,7 @@ pub fn convert_to_brep_shapes(geom: &CateGeoParam) -> Option<CateBrepShape> {
                 shape_err: None,
                 pts,
                 is_ngmr: false,
+                is_instance_negative: false,
             });
         }
         CateGeoParam::Snout(d) | CateGeoParam::Cone(d) => {
@@ -306,7 +313,7 @@ pub fn convert_to_brep_shapes(geom: &CateGeoParam) -> Option<CateBrepShape> {
             // }
             let rotation = if y_axis.length() == 0.0 {
                 Quat::from_rotation_arc(Vec3::Z, z_dir)
-            } else{
+            } else {
                 Quat::from_mat3(&Mat3::from_cols(x_axis, y_axis, z_dir))
             };
             let transform = Transform {
@@ -332,6 +339,7 @@ pub fn convert_to_brep_shapes(geom: &CateGeoParam) -> Option<CateBrepShape> {
                 shape_err: None,
                 pts,
                 is_ngmr: false,
+                is_instance_negative: false,
             });
         }
         CateGeoParam::SCylinder(d) => {
@@ -371,6 +379,7 @@ pub fn convert_to_brep_shapes(geom: &CateGeoParam) -> Option<CateBrepShape> {
                 shape_err: None,
                 pts,
                 is_ngmr: false,
+                is_instance_negative: false,
             });
         }
         CateGeoParam::LCylinder(d) => {
@@ -410,6 +419,7 @@ pub fn convert_to_brep_shapes(geom: &CateGeoParam) -> Option<CateBrepShape> {
                 shape_err: None,
                 pts,
                 is_ngmr: false,
+                is_instance_negative: false,
             });
         }
 
@@ -441,11 +451,7 @@ pub fn convert_to_brep_shapes(geom: &CateGeoParam) -> Option<CateBrepShape> {
                     } else if z_axis.z < -0.01 {
                         1.0
                     } else {
-                        if z_axis.x > 0.01 {
-                            -1.0
-                        } else {
-                            1.0
-                        }
+                        if z_axis.x > 0.01 { -1.0 } else { 1.0 }
                     };
                     // dbg!(t);
                     rot2 = Quat::from_axis_angle(z_axis, t * FRAC_PI_2);
@@ -454,7 +460,7 @@ pub fn convert_to_brep_shapes(geom: &CateGeoParam) -> Option<CateBrepShape> {
             } else {
                 let y_axis = ref_axis;
                 let x_axis = y_axis.cross(z_axis).normalize_or_zero();
-                if !x_axis.is_normalized(){
+                if !x_axis.is_normalized() {
                     return None;
                 }
                 Quat::from_mat3(&Mat3::from_cols(x_axis, y_axis, z_axis))
@@ -483,6 +489,7 @@ pub fn convert_to_brep_shapes(geom: &CateGeoParam) -> Option<CateBrepShape> {
                 shape_err: None,
                 pts,
                 is_ngmr: false,
+                is_instance_negative: false,
             });
         }
 
@@ -508,6 +515,7 @@ pub fn convert_to_brep_shapes(geom: &CateGeoParam) -> Option<CateBrepShape> {
                 shape_err: None,
                 pts,
                 is_ngmr: false,
+                is_instance_negative: false,
             });
         }
 
@@ -561,6 +569,7 @@ pub fn convert_to_brep_shapes(geom: &CateGeoParam) -> Option<CateBrepShape> {
                 shape_err: None,
                 pts,
                 is_ngmr: false,
+                is_instance_negative: false,
             });
         }
 
@@ -580,7 +589,7 @@ pub fn convert_to_brep_shapes(geom: &CateGeoParam) -> Option<CateBrepShape> {
                 .map(|d| d.normalize_or_zero())
                 .unwrap_or(pb.dir_flag * Vec3::Y);
             let mut z_dir = paax_dir.cross(pbax_dir).normalize_or_zero();
-            if !z_dir.is_normalized(){
+            if !z_dir.is_normalized() {
                 return None;
             }
             let pbax_dir = z_dir.cross(paax_dir).normalize_or_zero();
@@ -612,6 +621,7 @@ pub fn convert_to_brep_shapes(geom: &CateGeoParam) -> Option<CateBrepShape> {
                 shape_err: None,
                 pts,
                 is_ngmr: false,
+                is_instance_negative: false,
             });
         }
         _ => {}

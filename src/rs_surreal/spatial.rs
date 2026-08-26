@@ -1,10 +1,11 @@
+use crate::RefnoEnum;
 use crate::room::room::GLOBAL_AABB_TREE;
 use crate::tool::math_tool;
 use crate::tool::math_tool::{
     cal_quat_by_zdir_with_xref, dquat_to_pdms_ori_xyz_str, to_pdms_dvec_str, to_pdms_vec_str,
 };
-use crate::RefnoEnum;
 use crate::{
+    NamedAttrMap, RefU64, SUL_DB,
     accel_tree::acceleration_tree::QueryRay,
     consts::HAS_PLIN_TYPES,
     get_named_attmap,
@@ -15,7 +16,6 @@ use crate::{
         direction_parse::parse_expr_to_dir,
         math_tool::{quat_to_pdms_ori_str, quat_to_pdms_ori_xyz_str},
     },
-    NamedAttrMap, RefU64, SUL_DB,
 };
 use anyhow::anyhow;
 use approx::abs_diff_eq;
@@ -27,13 +27,12 @@ use glam::{DMat3, DMat4, DQuat, DVec3, Mat3, Mat4, Quat, Vec3};
 use parry3d::bounding_volume::Aabb;
 use parry3d::query::Ray;
 use serde::{Deserialize, Serialize};
-use serde_with::serde_as;
 use serde_with::DisplayFromStr;
+use serde_with::serde_as;
 use std::{collections::HashSet, f32::consts::E, time::Instant};
 use surrealdb::Surreal;
-use surrealdb::types::SerdeWrapper;
 use surrealdb::engine::any::Any;
-use surrealdb::Surreal;
+use surrealdb::types::SerdeWrapper;
 
 pub fn cal_ori_by_z_axis_ref_x(v: DVec3) -> DQuat {
     let mut ref_dir = if v.normalize().dot(DVec3::Z).abs() > 0.999 {
@@ -186,10 +185,7 @@ pub async fn get_spline_pts(refno: RefnoEnum) -> anyhow::Result<Vec<DVec3>> {
 }
 
 /// [`get_spline_pts`] 的显式句柄版。
-pub async fn get_spline_pts_on(
-    db: &Surreal<Any>,
-    refno: RefnoEnum,
-) -> anyhow::Result<Vec<DVec3>> {
+pub async fn get_spline_pts_on(db: &Surreal<Any>, refno: RefnoEnum) -> anyhow::Result<Vec<DVec3>> {
     let mut response = db.query(
         format!("select value (select in.refno.POS as pos, order_num from <-pe_owner[where in.noun='SPINE'].in<-pe_owner order by order_num).pos from only {}", refno.to_pe_key())).await?;
     let pts = response
@@ -217,6 +213,16 @@ pub async fn get_world_transform(refno: RefnoEnum) -> anyhow::Result<Option<Tran
             .map(|m| m.map(|x| Transform::from_matrix(x.as_mat4())));
     }
     get_world_transform_cached(refno).await
+}
+
+pub async fn get_world_transforms_many(
+    refnos: &[RefnoEnum],
+) -> anyhow::Result<Vec<(RefnoEnum, Option<Transform>)>> {
+    let mut rows = Vec::with_capacity(refnos.len());
+    for &refno in refnos {
+        rows.push((refno, get_world_transform(refno).await?));
+    }
+    Ok(rows)
 }
 
 #[cached(name = "GET_WORLD_TRANSFORM", result = true)]
@@ -502,7 +508,9 @@ async fn get_world_mat4_impl(refno: RefnoEnum, is_local: bool) -> anyhow::Result
                         dbg!(&param);
                     }
                 }
-                if let Ok(Some(own_param)) = crate::query_pline(plin_owner, own_pos_line.into()).await {
+                if let Ok(Some(own_param)) =
+                    crate::query_pline(plin_owner, own_pos_line.into()).await
+                {
                     plin_pos -= own_param.pt;
                     #[cfg(feature = "debug_spatial")]
                     {
@@ -593,11 +601,11 @@ async fn get_world_mat4_impl(refno: RefnoEnum, is_local: bool) -> anyhow::Result
 ///查询形集PLIN的值，todo 需要做缓存优化
 // #[cached]
 /// 根据参考号和JUSL值查询形集PLIN的参数数据
-/// 
+///
 /// # Arguments
 /// * `refno` - 参考号
 /// * `jusl` - JUSL值
-/// 
+///
 /// # Returns
 /// * `Ok(Some(PlinParamData))` - 查询成功返回PLIN参数数据
 /// * `Ok(None)` - 未找到匹配的PLIN数据

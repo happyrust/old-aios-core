@@ -1,29 +1,29 @@
-use serde_derive::{Deserialize, Serialize};
-use bevy_ecs::prelude::Resource;
-use glam::{bool, i32, u64, Vec3};
-use bevy_transform::components::Transform;
-use std::collections::{BTreeMap, BTreeSet, HashMap, HashSet};
-use nalgebra::Point3;
-use std::fs::File;
-use std::path::Path;
-use serde_with::serde_as;
-#[cfg(feature = "render")]
-use bevy_render::mesh::{Indices, Mesh};
-#[cfg(feature = "render")]
-use bevy_render::mesh::PrimitiveTopology::TriangleList;
-#[cfg(feature = "render")]
-use bevy_render::render_asset::RenderAssetUsages;
-use std::io::Write;
-use dashmap::DashSet;
-use crate::prim_geo::basic::{BOXI_GEO_HASH, TUBI_GEO_HASH};
-use crate::{gen_bytes_hash, RefU64, RefnoEnum};
 use crate::parsed_data::CateAxisParam;
 use crate::parsed_data::geo_params_data::PdmsGeoParam;
 use crate::pdms_types::PdmsGenericType;
+use crate::prim_geo::basic::{BOXI_GEO_HASH, TUBI_GEO_HASH};
 use crate::prim_geo::{SBox, SCylinder};
 use crate::shape::pdms_shape::{PlantMesh, RsVec3};
 use crate::tool::hash_tool::hash_two_str;
+use crate::{RefU64, RefnoEnum, gen_bytes_hash};
+use bevy_ecs::prelude::Resource;
+#[cfg(feature = "render")]
+use bevy_render::mesh::PrimitiveTopology::TriangleList;
+#[cfg(feature = "render")]
+use bevy_render::mesh::{Indices, Mesh};
+#[cfg(feature = "render")]
+use bevy_render::render_asset::RenderAssetUsages;
+use bevy_transform::components::Transform;
+use dashmap::DashSet;
+use glam::{Vec3, bool, i32, u64};
+use nalgebra::Point3;
 use parry3d::bounding_volume::Aabb;
+use serde_derive::{Deserialize, Serialize};
+use serde_with::serde_as;
+use std::collections::{BTreeMap, BTreeSet, HashMap, HashSet};
+use std::fs::File;
+use std::io::Write;
+use std::path::Path;
 
 /// 几何体的基本类型
 #[derive(
@@ -50,12 +50,13 @@ pub enum GeoBasicType {
     CataNeg,
     ///元件库的需要和design运算的负实体
     CataCrossNeg,
+    /// 元件库主几何集合内、仅参与所属实例布尔运算的负实体。
+    CataInstanceNeg,
     ///负实体运算过了
     Compound,
     ///属于隐含直段的类型
     Tubi,
 }
-
 
 /// 存储一个Element 包含的所有几何信息
 #[derive(
@@ -96,18 +97,18 @@ pub struct EleGeosInfo {
     pub ptset_map: BTreeMap<i32, CateAxisParam>,
     pub has_cata_neg: bool,
     pub is_solid: bool,
-
     // pub dt: chrono::NaiveDateTime,
 }
 
-
 impl EleGeosInfo {
-
     ///结合 version 和 refno 生成唯一的id
     #[inline]
     pub fn id_str(&self) -> String {
         let hash = self.cata_hash.clone();
-        if hash.is_none() || hash.as_ref().unwrap().is_empty() || hash.as_ref().unwrap().contains("_") {
+        if hash.is_none()
+            || hash.as_ref().unwrap().is_empty()
+            || hash.as_ref().unwrap().contains("_")
+        {
             format!("{}_{}", self.refno.to_string(), self.sesno)
         } else {
             hash.clone().unwrap()
@@ -182,10 +183,12 @@ pub struct ShapeInstancesData {
 
 /// shape instances 的管理方法
 impl ShapeInstancesData {
-
     pub fn is_empty(&self) -> bool {
-        self.inst_info_map.is_empty() && self.inst_geos_map.is_empty() && self.inst_tubi_map.is_empty()
-            && self.neg_relate_map.is_empty() && self.ngmr_neg_relate_map.is_empty()
+        self.inst_info_map.is_empty()
+            && self.inst_geos_map.is_empty()
+            && self.inst_tubi_map.is_empty()
+            && self.neg_relate_map.is_empty()
+            && self.ngmr_neg_relate_map.is_empty()
     }
 
     ///填充基本的形状
@@ -310,7 +313,6 @@ impl ShapeInstancesData {
         self.inst_geos_map.get(&k)
     }
 
-
     #[inline]
     pub fn get_inst_geos_data_mut_by_refno(
         &mut self,
@@ -348,9 +350,17 @@ impl ShapeInstancesData {
 
     ///插入 ngmr 数据
     #[inline]
-    pub fn insert_ngmr(&mut self, ele_refno: RefnoEnum, owners: Vec<RefnoEnum>, ngmr_geom_refno: RefnoEnum) {
+    pub fn insert_ngmr(
+        &mut self,
+        ele_refno: RefnoEnum,
+        owners: Vec<RefnoEnum>,
+        ngmr_geom_refno: RefnoEnum,
+    ) {
         for owner in owners {
-            let mut d = self.ngmr_neg_relate_map.entry(owner).or_insert_with(Vec::new);
+            let mut d = self
+                .ngmr_neg_relate_map
+                .entry(owner)
+                .or_insert_with(Vec::new);
             if !d.contains(&(ele_refno, ngmr_geom_refno)) {
                 //这里应该是一个组合，所以不会重复，既有design 的参考号，也有元件库几何体的参考号
                 d.push((ele_refno, ngmr_geom_refno));
@@ -361,7 +371,10 @@ impl ShapeInstancesData {
     ///插入neg数据
     #[inline]
     pub fn insert_negs(&mut self, refno: RefnoEnum, negs: &[RefnoEnum]) {
-        self.neg_relate_map.entry(refno).or_insert_with(Vec::new).extend(negs);
+        self.neg_relate_map
+            .entry(refno)
+            .or_insert_with(Vec::new)
+            .extend(negs);
     }
 
     #[inline]
@@ -422,7 +435,6 @@ pub struct PdmsInstanceMeshData {
     pub shape_insts: ShapeInstancesData,
 }
 
-
 pub type GeoHash = u64;
 
 #[derive(
@@ -449,14 +461,12 @@ impl Clone for PlantGeoData {
     }
 }
 
-
 impl PlantGeoData {
-
     ///返回三角模型 （tri_mesh, AABB）
     #[cfg(feature = "render")]
     pub fn gen_bevy_mesh_with_aabb(&self) -> Option<(Mesh, Option<Aabb>)> {
-
-        let mut mesh = bevy_render::prelude::Mesh::new(TriangleList, RenderAssetUsages::RENDER_WORLD);
+        let mut mesh =
+            bevy_render::prelude::Mesh::new(TriangleList, RenderAssetUsages::RENDER_WORLD);
         let d = PlantMesh::default();
         mesh.insert_attribute(Mesh::ATTRIBUTE_POSITION, d.vertices.clone());
         mesh.insert_attribute(Mesh::ATTRIBUTE_NORMAL, d.normals.clone());
@@ -519,7 +529,6 @@ pub struct EleInstGeosData {
 }
 
 impl EleInstGeosData {
-
     #[inline]
     pub fn id(&self) -> String {
         self.inst_key.clone()
@@ -625,7 +634,7 @@ impl EleInstGeo {
         json_string.push_str(&format!(
             "{{'id': inst_geo:⟨{}⟩, 'param': {} }}",
             self.geo_hash,
-           /* gen_bytes_hash::<_, 64>(&self.aabb),*/
+            /* gen_bytes_hash::<_, 64>(&self.aabb),*/
             serde_json::to_string(&param).unwrap()
         ));
         json_string

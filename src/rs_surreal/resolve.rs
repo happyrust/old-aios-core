@@ -1,11 +1,11 @@
 use std::collections::HashSet;
 use std::{collections::HashMap, str::FromStr};
 
-use crate::pdms_types::PdmsGenericType;
 use crate::RefnoEnum;
+use crate::pdms_types::PdmsGenericType;
 use crate::{
-    math::polish_notation::Stack, tiny_expr::expr_eval::interp, tool::float_tool::f64_round_3,
-    NamedAttrMap, NamedAttrValue, RefU64,
+    NamedAttrMap, NamedAttrValue, RefU64, math::polish_notation::Stack,
+    tiny_expr::expr_eval::interp, tool::float_tool::f64_round_3,
 };
 use dashmap::DashMap;
 use derive_more::{Deref, DerefMut};
@@ -69,6 +69,151 @@ impl CataContext {
     pub fn is_tubi(&self) -> bool {
         self.is_tubi
     }
+}
+
+/// 从一次页面预取快照创建元件库表达式上下文。
+///
+/// 该函数不再发起数据库读取，因而同一生成页中的设计属性、owner、DTRE 和 CREF
+/// 必然来自同一个只读快照。字段规则与 [`get_or_create_cata_context`] 保持一致。
+pub fn create_cata_context_from_snapshot(
+    desi_refno: RefnoEnum,
+    is_tubi: bool,
+    desi_att: &NamedAttrMap,
+    cata_attmap: Option<&NamedAttrMap>,
+    owner_att: Option<&NamedAttrMap>,
+    dtre_children: &[NamedAttrMap],
+    parent_cata_att: Option<&NamedAttrMap>,
+    attach_att: Option<&NamedAttrMap>,
+    attach_cata_att: Option<&NamedAttrMap>,
+) -> CataContext {
+    let mut context = CataContext::default();
+    context.is_tubi = is_tubi;
+    if let Some(value) = desi_att.get_as_string("JUSL") {
+        context.insert("JUSL", value);
+    }
+    context.insert("DESI_REFNO", desi_refno.to_string());
+    for (index, value) in desi_att
+        .get_f32_vec("DESP")
+        .unwrap_or_default()
+        .into_iter()
+        .enumerate()
+    {
+        context.insert(format!("DESI{}", index + 1), value.to_string());
+        context.insert(format!("DESP{}", index + 1), value.to_string());
+    }
+    for (index, value) in desi_att
+        .get_ddesp()
+        .unwrap_or_default()
+        .into_iter()
+        .enumerate()
+    {
+        context.insert(format!("DDES{}", index + 1), value.to_string());
+    }
+    context.insert(
+        DDHEIGHT_STR,
+        desi_att
+            .get_as_string("HEIG")
+            .unwrap_or_else(|| "0.0".into()),
+    );
+    context.insert(
+        DDANGLE_STR,
+        desi_att
+            .get_as_string("ANGL")
+            .unwrap_or_else(|| "0.0".into()),
+    );
+    context.insert(
+        DDRADIUS_STR,
+        desi_att
+            .get_as_string("RADI")
+            .unwrap_or_else(|| "0.0".into()),
+    );
+    for (name, value) in &desi_att.map {
+        let name = name.to_uppercase();
+        match value {
+            NamedAttrValue::F32Type(value) => context.insert(name, value.to_string()),
+            NamedAttrValue::F32VecType(values) => {
+                for (index, value) in values.iter().enumerate() {
+                    context.insert(format!("{}{}", name, index + 1), value.to_string());
+                }
+            }
+            _ => {}
+        }
+    }
+    context.insert("RS_DES_REFNO", desi_refno.to_string());
+
+    if let Some(cata_attmap) = cata_attmap {
+        context.insert(
+            "RS_CATR_REFNO",
+            cata_attmap.get_refno_or_default().to_string(),
+        );
+        for (index, value) in cata_attmap
+            .get_f32_vec("PARA")
+            .unwrap_or_default()
+            .into_iter()
+            .enumerate()
+        {
+            for prefix in ["CPAR", "PARA", "PARAM"] {
+                context.insert(format!("{prefix}{}", index + 1), value.to_string());
+            }
+            context.insert(format!("IPARA{}", index + 1), "0");
+            context.insert(format!("IPAR{}", index + 1), "0");
+        }
+        for child in dtre_children {
+            if let Some(key) = child.get_as_string("DKEY") {
+                let key = format!("RPRO_{key}");
+                context.insert(key.clone(), child.get_as_string("PPRO").unwrap_or_default());
+                context.insert(
+                    format!("{key}_default_expr"),
+                    child.get_as_string("DPRO").unwrap_or_default(),
+                );
+                context.insert(
+                    format!("{key}_default_type"),
+                    child.get_as_string("PTYP").unwrap_or_default(),
+                );
+            }
+        }
+        if let Some(owner_att) = owner_att {
+            for (index, value) in owner_att
+                .get_f32_vec("DESP")
+                .unwrap_or_default()
+                .into_iter()
+                .enumerate()
+            {
+                context.insert(format!("ODES{}", index + 1), value.to_string());
+            }
+        }
+        if let Some(parent_cata_att) = parent_cata_att {
+            for (index, value) in parent_cata_att
+                .get_f32_vec("PARA")
+                .unwrap_or_default()
+                .into_iter()
+                .enumerate()
+            {
+                context.insert(format!("OPAR{}", index + 1), value.to_string());
+            }
+        }
+        if let Some(attach_att) = attach_att {
+            for (index, value) in attach_att
+                .get_f32_vec("DESP")
+                .unwrap_or_default()
+                .into_iter()
+                .enumerate()
+            {
+                context.insert(format!("ADES{}", index + 1), value.to_string());
+            }
+        }
+        if let Some(attach_cata_att) = attach_cata_att {
+            for (index, value) in attach_cata_att
+                .get_f32_vec("PARA")
+                .unwrap_or_default()
+                .into_iter()
+                .enumerate()
+            {
+                context.insert(format!("APAR{}", index + 1), value.to_string());
+            }
+        }
+    }
+    context
 }
 
 pub const DDHEIGHT_STR: &'static str = "DDHEIGHT";

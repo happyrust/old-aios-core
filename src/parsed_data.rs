@@ -16,6 +16,8 @@ pub struct CateGeomsInfo {
     pub geometries: Vec<CateGeoParam>,
     /// 和dsign发生运算的负实体数据
     pub n_geometries: Vec<CateGeoParam>,
+    /// `geometries` 中来自 N* 几何 noun 的参考号；保持排序以供调用方二分查找。
+    pub instance_negative_refnos: Vec<RefnoEnum>,
     pub axis_map: BTreeMap<i32, CateAxisParam>,
 }
 
@@ -130,7 +132,7 @@ impl Default for CateAxisParam {
 }
 
 pub mod geo_params_data {
-        use crate::prim_geo::ctorus::CTorus;
+    use crate::prim_geo::ctorus::CTorus;
     use crate::prim_geo::dish::Dish;
     use crate::prim_geo::extrusion::Extrusion;
     use crate::prim_geo::polyhedron::Polyhedron;
@@ -141,11 +143,11 @@ pub mod geo_params_data {
     use crate::prim_geo::snout::LSnout;
     use crate::prim_geo::sphere::Sphere;
     use crate::prim_geo::sweep_solid::SweepSolid;
-    use crate::prim_geo::{cylinder::*, LPyramid};
+    use crate::prim_geo::{LPyramid, cylinder::*};
     use crate::rvm_types::RvmShapeTypeData;
     use crate::shape::pdms_shape::{BrepShapeTrait, RsVec3, VerifiedShape};
     use anyhow::anyhow;
-        use serde_derive::{Deserialize, Serialize};
+    use serde_derive::{Deserialize, Serialize};
 
     #[derive(Clone, Serialize, Deserialize, Debug, Default)]
     pub enum CateGeoParam {
@@ -559,7 +561,6 @@ pub struct SannData {
     pub na_axis: Vec3,
 }
 
-
 ///一般的由顶点组成的截面信息
 #[derive(
     Clone,
@@ -621,7 +622,7 @@ impl SRectData {
             plax: self.plax,
             plin_pos: self.plin_pos,
             plin_axis: self.plin_axis,
-            na_axis: self.na_axis
+            na_axis: self.na_axis,
         }
     }
 }

@@ -1,7 +1,7 @@
 use crate::aios_db_mgr::aios_mgr::AiosDBMgr;
 use crate::basic::aabb::ParryAabb;
 use crate::pdms_types::PdmsGenericType;
-use crate::{get_inst_relate_keys, RefU64, RefnoEnum, SUL_DB};
+use crate::{RefU64, RefnoEnum, SUL_DB, get_inst_relate_keys};
 use bevy_transform::components::Transform;
 use chrono::{DateTime, Local, NaiveDateTime};
 use glam::{DVec3, Vec3};
@@ -132,16 +132,19 @@ pub struct GeomInstQuery {
 }
 
 /// 几何点集查询结构体
-#[derive(Serialize, Deserialize, Debug)]
+#[derive(Serialize, Deserialize, Debug, SurrealValue)]
 pub struct GeomPtsQuery {
     /// 构件编号，别名为id
     #[serde(alias = "id")]
     pub refno: RefnoEnum,
     /// 世界坐标系下的变换矩阵
+    #[surreal(wrap)]
     pub world_trans: Transform,
     /// 世界坐标系下的包围盒
+    #[surreal(wrap)]
     pub world_aabb: Aabb,
     /// 点集组，每组包含一个变换矩阵和可选的点集数据
+    #[surreal(wrap)]
     pub pts_group: Vec<(Transform, Option<Vec<DVec3>>)>,
 }
 
@@ -317,7 +320,7 @@ pub async fn query_insts_by_zone(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::{init_test_surreal, RefnoEnum};
+    use crate::{RefnoEnum, init_test_surreal};
 
     #[tokio::test]
     async fn query_insts_uses_the_staged_read_database() -> anyhow::Result<()> {
@@ -326,11 +329,8 @@ mod tests {
         let context = super::super::staging::StagingReadContext::new(db, "staged_insts");
         let refnos = vec![RefnoEnum::from("4000000001/20")];
 
-        let rows = super::super::staging::with_staging_reads(
-            context,
-            query_insts(&refnos, true),
-        )
-        .await?;
+        let rows =
+            super::super::staging::with_staging_reads(context, query_insts(&refnos, true)).await?;
         assert!(rows.is_empty());
         Ok(())
     }

@@ -1,10 +1,10 @@
 use std::collections::BTreeMap;
 
-use crate::{AttrMap, CataContext, NamedAttrValue};
 use crate::expression::resolve::{resolve_axis_params, resolve_gms};
 use crate::parsed_data::CateGeomsInfo;
 use crate::pdms_data::{AxisParam, GmParam, ScomInfo};
 use crate::pdms_types::*;
+use crate::{AttrMap, CataContext, NamedAttrValue};
 
 ///查询 Axis 参数
 pub async fn query_axis_params(refno: RefnoEnum) -> anyhow::Result<BTreeMap<i32, AxisParam>> {
@@ -41,7 +41,7 @@ pub fn resolve_cata_comp(
     let jusl_param = if let Some(plin) = cur_context.get("JUSL") {
         if scom_info.plin_map.contains_key(plin.as_str()) {
             Some(scom_info.plin_map.get(plin.as_str()).unwrap().clone())
-        }  else {
+        } else {
             None
         }
     } else {
@@ -50,9 +50,18 @@ pub fn resolve_cata_comp(
 
     let na_plin_param = if scom_info.plin_map.contains_key("NA") {
         Some(scom_info.plin_map.get("NA").unwrap().clone())
-    }else{
+    } else {
         None
     };
+
+    let mut instance_negative_refnos = scom_info
+        .gm_params
+        .iter()
+        .filter(|gm| gm.gm_type.starts_with('N'))
+        .map(|gm| gm.refno)
+        .collect::<Vec<_>>();
+    instance_negative_refnos.sort_unstable();
+    instance_negative_refnos.dedup();
 
     let geometries = resolve_gms(
         des_refno,
@@ -63,7 +72,7 @@ pub fn resolve_cata_comp(
         &axis_param_map,
     );
     // dbg!((des_refno, &geometries));
-    
+
     let n_geometries = resolve_gms(
         des_refno,
         &scom_info.ngm_params,
@@ -73,11 +82,11 @@ pub fn resolve_cata_comp(
         &axis_param_map,
     );
 
-
     Ok(CateGeomsInfo {
         refno: cat_ref,
         geometries,
         n_geometries,
+        instance_negative_refnos,
         axis_map: axis_param_map,
     })
 }
@@ -183,7 +192,7 @@ pub fn get_axis_param(attr_map: &NamedAttrMap) -> Option<AxisParam> {
 pub async fn query_gm_param(
     att: &NamedAttrMap,
     is_spro: bool,
-) -> Option<GmParam> {
+) -> Option<(GmParam, Vec<RefnoEnum>)> {
     // dbg!(a);
     let mut paxises = att.get_attr_strings_without_default(&["PAXI", "PAAX", "PBAX", "PCAX"]);
     if let Some(val) = att.get_val("PTS") {
@@ -205,11 +214,15 @@ pub async fn query_gm_param(
     let mut frads = vec![];
     let mut dxy = vec![];
     let refno = att.get_refno().unwrap_or_default();
+    let mut dependencies = vec![refno];
     let type_name = att.get_type_str();
     if type_name == "SEXT" || type_name == "NSEX" || type_name == "SREV" || type_name == "NSRE" {
         //先暂时不考虑负实体
         let children = crate::get_children_named_attmaps(refno).await.ok()?;
         for child in children {
+            if let Some(child_refno) = child.get_refno() {
+                dependencies.push(child_refno);
+            }
             if let Some(r) = child.get_refno()
                 && child.get_type_str() == "SLOO"
             {
@@ -218,6 +231,9 @@ pub async fn query_gm_param(
                     .unwrap_or_default();
                 // dbg!(&vert_atts);
                 for a in vert_atts {
+                    if let Some(vertex_refno) = a.get_refno() {
+                        dependencies.push(vertex_refno);
+                    }
                     verts.push([
                         (a.get_as_string("PX").unwrap_or_default()),
                         (a.get_as_string("PY").unwrap_or_default()),
@@ -235,6 +251,9 @@ pub async fn query_gm_param(
                 .ok()
                 .unwrap_or_default()
             {
+                if let Some(child_refno) = a.get_refno() {
+                    dependencies.push(child_refno);
+                }
                 verts.push([
                     (a.get_as_string("PX").unwrap_or_default()),
                     (a.get_as_string("PY").unwrap_or_default()),
@@ -260,7 +279,7 @@ pub async fn query_gm_param(
         }
     }
 
-    Some(GmParam {
+    let geometry = GmParam {
         refno: att.get_refno().unwrap_or_default(),
         gm_type: att.get_type_str().to_owned(),
         prad: (att.get_as_string("PRAD").unwrap_or_default()),
@@ -284,5 +303,8 @@ pub async fn query_gm_param(
         centre_line_flag,
         visible_flag: tube_flag,
         plax: att.get_as_string("PLAX"),
-    })
+    };
+    dependencies.sort_unstable();
+    dependencies.dedup();
+    Some((geometry, dependencies))
 }
