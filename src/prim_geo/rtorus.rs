@@ -1,6 +1,7 @@
 use crate::NamedAttrMap;
 use crate::parsed_data::geo_params_data::PdmsGeoParam;
 use crate::prim_geo::helper::*;
+use crate::prim_geo::libgm_discretise::{FACET_TOL_MM, torus_ring_segments};
 use crate::shape::pdms_shape::*;
 use crate::tool::float_tool::hash_f32;
 use crate::types::attmap::AttrMap;
@@ -137,6 +138,11 @@ pub struct RTorus {
     pub rout: f32,
     pub height: f32,
     pub angle: f32, //旋转角度
+    /// 环向段数，**只有单位行带**（`gen_unit_shape()` 按真实外半径算好写进来；原件上是
+    /// `None`）。矩形截面没有管向曲率，所以只有这**一元**——别照抄圆环面再加一个不存在
+    /// 的轴（T041 B4）。读取一律走 [`Self::ring_segment_count`]。
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub ring_segments: Option<i32>,
 }
 
 impl Default for RTorus {
@@ -146,7 +152,19 @@ impl Default for RTorus {
             rout: 1.0,
             height: 1.0,
             angle: 90.0,
+            ring_segments: None,
         }
+    }
+}
+
+impl RTorus {
+    /// 环向段数：单位行读携带值，原件按真实外半径与扫角现算（`GM_RectTorus`
+    /// `0x100962F0` 喂外半径走部分回转）。哈希与落库的单位参数都从这里取（T041 A3）。
+    #[inline]
+    pub fn ring_segment_count(&self) -> i32 {
+        self.ring_segments.unwrap_or_else(|| {
+            torus_ring_segments(self.rout as f64, FACET_TOL_MM, self.angle as f64)
+        })
     }
 }
 
@@ -174,6 +192,8 @@ impl BrepShapeTrait for RTorus {
         let mut hasher = DefaultHasher::new();
         hash_f32(self.rins / self.rout, &mut hasher);
         hash_f32(self.angle, &mut hasher);
+        // 只有环向这一元进键；`height` 走 `get_scaled_vec3` 的 z，本来就不进（T041 B4）。
+        self.ring_segment_count().hash(&mut hasher);
         "rtorus".hash(&mut hasher);
         hasher.finish()
     }
@@ -185,6 +205,7 @@ impl BrepShapeTrait for RTorus {
             rout: 1.0,
             height: 1.0,
             angle: self.angle,
+            ring_segments: Some(self.ring_segment_count()),
         };
         Box::new(unit)
     }
@@ -219,6 +240,7 @@ impl From<&AttrMap> for RTorus {
             rout,
             height,
             angle,
+            ring_segments: None,
         }
     }
 }
@@ -241,6 +263,7 @@ impl From<&NamedAttrMap> for RTorus {
             rout,
             height,
             angle,
+            ring_segments: None,
         }
     }
 }
@@ -290,5 +313,37 @@ mod tests {
         let t = RTorus::from(&attrs(3.0, 10.0, 4.0, 90.0));
         assert_eq!(t.rins, 3.0);
         assert!(t.check_valid());
+    }
+
+    /// T041 B4：矩形环面的键只多环向**一元**——`rout = 250`（90° 下 13 段）与
+    /// `rout = 1000`（25 段）分行，只差 `height` 的两件仍同一行。
+    #[test]
+    fn a_rectangular_torus_key_carries_only_the_ring_class() {
+        let torus = |rout: f32, height: f32| RTorus {
+            rins: rout * 0.5,
+            rout,
+            height,
+            angle: 90.0,
+            ..Default::default()
+        };
+        assert_eq!(torus(250.0, 40.0).ring_segment_count(), 13);
+        assert_eq!(torus(1000.0, 40.0).ring_segment_count(), 25);
+        assert_ne!(
+            torus(250.0, 40.0).hash_unit_mesh_params(),
+            torus(1000.0, 40.0).hash_unit_mesh_params()
+        );
+        assert_eq!(
+            torus(250.0, 40.0).hash_unit_mesh_params(),
+            torus(250.0, 900.0).hash_unit_mesh_params(),
+            "height 不进键"
+        );
+
+        let unit = torus(1000.0, 40.0).gen_unit_shape();
+        assert_eq!(
+            unit.hash_unit_mesh_params(),
+            torus(1000.0, 40.0).hash_unit_mesh_params()
+        );
+        let unit = unit.downcast::<RTorus>().unwrap();
+        assert_eq!((unit.ring_segments, unit.rout, unit.height), (Some(25), 1.0, 1.0));
     }
 }

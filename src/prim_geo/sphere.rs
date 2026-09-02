@@ -1,10 +1,12 @@
 use crate::parsed_data::geo_params_data::PdmsGeoParam;
-use crate::prim_geo::basic::*;
+use crate::prim_geo::libgm_discretise::{FACET_TOL_MM, cylinder_segments};
 use crate::shape::pdms_shape::{BrepShapeTrait, PlantMesh, RsVec3, VerifiedShape};
 use glam::Vec3;
 use hexasphere::shapes::IcoSphere;
 use serde::{Deserialize, Serialize};
+use std::collections::hash_map::DefaultHasher;
 use std::f64::consts::PI;
+use std::hash::{Hash, Hasher};
 use std::sync::Arc;
 
 use crate::NamedAttrMap;
@@ -25,6 +27,12 @@ use bevy_ecs::prelude::*;
 pub struct Sphere {
     pub center: Vec3,
     pub radius: f32,
+    /// 绕轴段数 `n`，**只有单位行带**（`gen_unit_shape()` 按真实半径算好写进来；
+    /// 原件上是 `None`）。经向带数恒为 `n/2`（`GM_Sphere::calcFacetsWithoutSurfaces`
+    /// `0x100A20F0`），不是独立自由度，所以只带这一个数（T041 B5）。
+    /// 读取一律走 [`Self::segment_count`]。
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub segments: Option<i32>,
 }
 
 impl Default for Sphere {
@@ -32,7 +40,18 @@ impl Default for Sphere {
         Sphere {
             center: Default::default(),
             radius: 1.0,
+            segments: None,
         }
+    }
+}
+
+impl Sphere {
+    /// 绕轴段数：单位行读携带值，原件按真实半径现算（`GM_Sphere` 与圆柱同一条规则，
+    /// 喂自己的半径）。哈希与落库的单位参数都从这里取（T041 A3）。
+    #[inline]
+    pub fn segment_count(&self) -> i32 {
+        self.segments
+            .unwrap_or_else(|| cylinder_segments(self.radius as f64, FACET_TOL_MM))
     }
 }
 
@@ -54,12 +73,20 @@ impl BrepShapeTrait for Sphere {
         vec![self.center.into()]
     }
 
+    /// 球的身份键只有绕轴段数一个自由度（T041 B5）：半径在实例变换里，`stacks` 恒为
+    /// `n/2` 不进键。同段数等价类的球共享一行，跨等价类分行。
     fn hash_unit_mesh_params(&self) -> u64 {
-        SPHERE_GEO_HASH //代表SPHERE
+        let mut hasher = DefaultHasher::new();
+        self.segment_count().hash(&mut hasher);
+        "sphere".hash(&mut hasher);
+        hasher.finish()
     }
 
     fn gen_unit_shape(&self) -> Box<dyn BrepShapeTrait> {
-        Box::new(Sphere::default())
+        Box::new(Sphere {
+            segments: Some(self.segment_count()),
+            ..Default::default()
+        })
     }
 
     #[inline]
@@ -121,6 +148,7 @@ impl From<&AttrMap> for Sphere {
         Self {
             center: Default::default(),
             radius: m.get_f32("RADI").unwrap_or_default(),
+            segments: None,
         }
     }
 }
@@ -130,6 +158,41 @@ impl From<&NamedAttrMap> for Sphere {
         Self {
             center: Default::default(),
             radius: m.get_f32("RADI").unwrap_or_default(),
+            segments: None,
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// T041 B5：球的键只混绕轴段数一个数。R=100（32 段）与 R=295（56 段）分行，
+    /// R=100 与 R=101 同为 32 段共享一行；单位行携带 `n` 并重新哈希到同一个键。
+    #[test]
+    fn the_sphere_key_is_its_single_segment_class() {
+        let sphere = |radius: f32| Sphere {
+            radius,
+            ..Default::default()
+        };
+        assert_eq!(sphere(100.0).segment_count(), 32);
+        assert_eq!(sphere(101.0).segment_count(), 32);
+        assert_eq!(sphere(295.0).segment_count(), 56);
+        assert_ne!(
+            sphere(100.0).hash_unit_mesh_params(),
+            sphere(295.0).hash_unit_mesh_params()
+        );
+        assert_eq!(
+            sphere(100.0).hash_unit_mesh_params(),
+            sphere(101.0).hash_unit_mesh_params()
+        );
+
+        let unit = sphere(295.0).gen_unit_shape();
+        assert_eq!(
+            unit.hash_unit_mesh_params(),
+            sphere(295.0).hash_unit_mesh_params()
+        );
+        let unit = unit.downcast::<Sphere>().unwrap();
+        assert_eq!((unit.segments, unit.radius), (Some(56), 1.0));
     }
 }

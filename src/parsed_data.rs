@@ -273,9 +273,15 @@ pub mod geo_params_data {
                 PdmsGeoParam::PrimLPyramid(s) => {
                     PdmsGeoParam::PrimLPyramid(*s.gen_unit_shape().downcast::<LPyramid>().unwrap())
                 }
-                PdmsGeoParam::PrimSCylinder(s) => PdmsGeoParam::PrimSCylinder(
-                    *s.gen_unit_shape().downcast::<SCylinder>().unwrap(),
-                ),
+                // 非切角 SCylinder 的单位形状是 LCylinder 的单位行（两者共享同一行单位
+                // 圆柱，规范 param 只有 `PrimLCylinder` 一个变体）；切角柱（SSCL）仍是
+                // 带真实尺寸的 SCylinder 克隆。按实际类型落回变体。
+                PdmsGeoParam::PrimSCylinder(s) => match s.gen_unit_shape().downcast::<LCylinder>() {
+                    Ok(unit) => PdmsGeoParam::PrimLCylinder(*unit),
+                    Err(unit) => {
+                        PdmsGeoParam::PrimSCylinder(*unit.downcast::<SCylinder>().unwrap())
+                    }
+                },
                 PdmsGeoParam::PrimLCylinder(s) => PdmsGeoParam::PrimLCylinder(
                     *s.gen_unit_shape().downcast::<LCylinder>().unwrap(),
                 ),

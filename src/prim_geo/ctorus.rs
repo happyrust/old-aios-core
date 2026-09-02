@@ -1,6 +1,9 @@
 use crate::NamedAttrMap;
 use crate::parsed_data::geo_params_data::PdmsGeoParam;
 use crate::prim_geo::helper::RotateInfo;
+use crate::prim_geo::libgm_discretise::{
+    FACET_TOL_MM, circular_torus_tube_segments, torus_ring_segments,
+};
 use crate::shape::pdms_shape::{BrepShapeTrait, PlantMesh, RsVec3, TRI_TOL, VerifiedShape};
 use crate::tool::float_tool::hash_f32;
 use crate::types::attmap::AttrMap;
@@ -131,6 +134,34 @@ pub struct CTorus {
     pub rout: f32,
     //外圆半径
     pub angle: f32, //旋转角度
+    /// 环向 / 管截面两个方向的段数，**只有单位行带**（`gen_unit_shape()` 按真实半径算好
+    /// 写进来；原件上是 `None`）。两个数都是 `rout` 的函数，但量化粒度不同——
+    /// `rins/rout = 0.5`、360° 下 `rout = 104` 与 `105` 环向同为 36、管截面却是 16 与 20
+    /// ——所以键里两个都要有（T041 B3）。读取一律走 [`Self::segment_counts`]。
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub segments: Option<CircularTorusSegments>,
+}
+
+/// 圆环面的两个离散方向：`GM_CircTorus`（`0x10047150`）扫掠方向喂外半径走部分回转，
+/// 管截面方向喂 `(rOut − rIns)/2` 走整圆。
+#[derive(
+    Debug,
+    Clone,
+    Copy,
+    PartialEq,
+    Eq,
+    Hash,
+    Serialize,
+    Deserialize,
+    rkyv::Archive,
+    rkyv::Deserialize,
+    rkyv::Serialize,
+)]
+pub struct CircularTorusSegments {
+    /// 环向（扫掠方向）段数。
+    pub ring: i32,
+    /// 管截面段数。
+    pub tube: i32,
 }
 
 impl Default for CTorus {
@@ -139,7 +170,20 @@ impl Default for CTorus {
             rins: 0.5,
             rout: 1.0,
             angle: 90.0,
+            segments: None,
         }
+    }
+}
+
+impl CTorus {
+    /// 两个方向的段数：单位行读携带值，原件按真实半径现算。哈希与落库的单位参数都
+    /// 从这里取（T041 A3）。
+    #[inline]
+    pub fn segment_counts(&self) -> CircularTorusSegments {
+        self.segments.unwrap_or_else(|| CircularTorusSegments {
+            ring: torus_ring_segments(self.rout as f64, FACET_TOL_MM, self.angle as f64),
+            tube: circular_torus_tube_segments(self.rins as f64, self.rout as f64, FACET_TOL_MM),
+        })
     }
 }
 
@@ -161,6 +205,9 @@ impl BrepShapeTrait for CTorus {
         let mut hasher = DefaultHasher::new();
         hash_f32(self.rins / self.rout, &mut hasher);
         hash_f32(self.angle, &mut hasher);
+        // 二元组整个进键（带结构，不摊平）：只混环向，环向相同而管截面段数不同的
+        // 两件会共用一行（T041 B3）。
+        self.segment_counts().hash(&mut hasher);
         "ctorus".hash(&mut hasher);
         hasher.finish()
     }
@@ -171,6 +218,7 @@ impl BrepShapeTrait for CTorus {
             rins,
             rout: 1.0,
             angle: self.angle,
+            segments: Some(self.segment_counts()),
         };
         Box::new(unit)
     }
@@ -202,6 +250,7 @@ impl From<&AttrMap> for CTorus {
             rins: r_i,
             rout: r_o,
             angle,
+            segments: None,
         }
     }
 }
@@ -222,6 +271,7 @@ impl From<&NamedAttrMap> for CTorus {
             rins: r_i,
             rout: r_o,
             angle,
+            segments: None,
         }
     }
 }
@@ -268,5 +318,38 @@ mod tests {
         let t = CTorus::from(&attrs(3.0, 10.0, 90.0));
         assert_eq!(t.rins, 3.0);
         assert!(t.check_valid());
+    }
+
+    /// T041 B3：环向相同（36）而管截面段数不同（16 / 20）的两件圆环面要分行；
+    /// 单位行携带二元组并重新哈希到同一个键。
+    #[test]
+    fn a_circular_torus_key_carries_both_directions() {
+        let torus = |rout: f32| CTorus {
+            rins: rout * 0.5,
+            rout,
+            angle: 360.0,
+            ..Default::default()
+        };
+        assert_eq!(
+            torus(104.0).segment_counts(),
+            CircularTorusSegments { ring: 36, tube: 16 }
+        );
+        assert_eq!(
+            torus(105.0).segment_counts(),
+            CircularTorusSegments { ring: 36, tube: 20 }
+        );
+        assert_ne!(
+            torus(104.0).hash_unit_mesh_params(),
+            torus(105.0).hash_unit_mesh_params()
+        );
+
+        let unit = torus(105.0).gen_unit_shape();
+        assert_eq!(
+            unit.hash_unit_mesh_params(),
+            torus(105.0).hash_unit_mesh_params()
+        );
+        let unit = unit.downcast::<CTorus>().unwrap();
+        assert_eq!(unit.rout, 1.0);
+        assert_eq!(unit.segments, Some(CircularTorusSegments { ring: 36, tube: 20 }));
     }
 }

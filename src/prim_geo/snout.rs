@@ -1,5 +1,6 @@
 use crate::NamedAttrMap;
 use crate::parsed_data::geo_params_data::PdmsGeoParam;
+use crate::prim_geo::libgm_discretise::{FACET_TOL_MM, snout_segments};
 use crate::shape::pdms_shape::{BrepShapeTrait, VerifiedShape};
 use crate::tool::float_tool::{f32_round_3, hash_f32};
 use crate::types::attmap::AttrMap;
@@ -37,6 +38,14 @@ pub struct LSnout {
     pub poff: f32, //offset
 
     pub btm_on_top: bool,
+
+    /// 绕轴段数，**只有同心（`poff == 0`）的单位行带**：`gen_unit_shape()` 按两端真实
+    /// 半径的大者算好写进来（`GM_Snout::calcFacets` `0x1009EA30`）。原件与偏心 Snout
+    /// 上恒为 `None`——偏心那支的键是整个结构的 bincode 序列化，这个字段为 `None` 时
+    /// 按 serde 规则**不写出**，字节与加字段之前逐位相同，键因此一位不动（T041 B6）。
+    /// 读取一律走 [`Self::segment_count`]。
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub segments: Option<i32>,
 }
 
 impl Default for LSnout {
@@ -56,6 +65,7 @@ impl Default for LSnout {
             pbdm: 1.0,
             poff: 0.0,
             btm_on_top: false,
+            segments: None,
         }
     }
 }
@@ -91,6 +101,26 @@ impl LSnout {
             a_dir * self.ptdi + self.paax_pt + half_off,
         )
     }
+
+    /// 偏心 Snout 不复用：整个结构按真实尺寸落库，键是它的 bincode 序列化。
+    #[inline]
+    pub fn is_eccentric(&self) -> bool {
+        self.poff.abs() > EPSILON
+    }
+
+    /// 绕轴段数：单位行读携带值，原件按**两端真实半径的大者**现算
+    /// （`GM_Snout::calcFacets` 喂的就是大者，取错哪一端侧壁都跟相邻圆柱对不上）。
+    /// 哈希与落库的单位参数都从这里取（T041 A3）。
+    #[inline]
+    pub fn segment_count(&self) -> i32 {
+        self.segments.unwrap_or_else(|| {
+            snout_segments(
+                (self.pbdm / 2.0) as f64,
+                (self.ptdm / 2.0) as f64,
+                FACET_TOL_MM,
+            )
+        })
+    }
 }
 
 //#[typetag::serde]
@@ -108,7 +138,7 @@ impl BrepShapeTrait for LSnout {
     fn hash_unit_mesh_params(&self) -> u64 {
         let mut hasher = DefaultHasher::new();
         //对于有偏移的，直接不复用，后面看情况再考虑复用
-        if self.poff.abs() > f32::EPSILON {
+        if self.is_eccentric() {
             let bytes = bincode::serialize(self).unwrap();
             let mut hasher = DefaultHasher::default();
             bytes.hash(&mut hasher);
@@ -122,20 +152,25 @@ impl BrepShapeTrait for LSnout {
         };
         hash_f32(alpha, &mut hasher);
         pheight.hash(&mut hasher);
+        // 锥度比是尺度无关量，单靠它 pbdm=100（24 段）与 pbdm=600（56 段）会同键；
+        // 段数按两端真实半径的大者算进来（T041 A 组）。
+        self.segment_count().hash(&mut hasher);
         "snout".hash(&mut hasher);
         hasher.finish()
     }
 
     fn gen_unit_shape(&self) -> Box<dyn BrepShapeTrait> {
-        if self.poff.abs() > f32::EPSILON {
+        if self.is_eccentric() {
             Box::new(self.clone())
         } else {
+            let segments = Some(self.segment_count());
             if self.ptdm < 0.001 {
                 Box::new(Self {
                     ptdi: 0.5,
                     pbdi: -0.5,
                     ptdm: 0.0,
                     pbdm: 1.0,
+                    segments,
                     ..Default::default()
                 })
             } else if self.pbdm < 0.001 {
@@ -144,6 +179,7 @@ impl BrepShapeTrait for LSnout {
                     pbdi: -0.5,
                     ptdm: 1.0,
                     pbdm: 0.0,
+                    segments,
                     ..Default::default()
                 })
             } else {
@@ -157,6 +193,7 @@ impl BrepShapeTrait for LSnout {
                     pbdi: -0.5,
                     ptdm,
                     pbdm: 1.0,
+                    segments,
                     ..Default::default()
                 })
             }
@@ -253,6 +290,61 @@ mod tests {
             .unwrap();
         assert_eq!(left.ptdm, right.ptdm);
         assert_eq!(left.ptdm, 0.556);
+    }
+
+    /// T041：同一锥度比下，段数等价类不同就分行（pbdm=100 → 24 段，600 → 56 段），
+    /// 同等价类仍共享（pbdm=1 / 2 都撞 8 段下限）；单位行携带段数并重新哈希到同一个键。
+    #[test]
+    fn a_concentric_snout_key_carries_its_larger_end_segment_class() {
+        let snout = |pbdm: f32| LSnout {
+            ptdm: pbdm * 0.5,
+            pbdm,
+            ..Default::default()
+        };
+        assert_eq!(snout(100.0).segment_count(), 24);
+        assert_eq!(snout(600.0).segment_count(), 56);
+        assert_ne!(
+            snout(100.0).hash_unit_mesh_params(),
+            snout(600.0).hash_unit_mesh_params()
+        );
+        assert_eq!(
+            snout(1.0).hash_unit_mesh_params(),
+            snout(2.0).hash_unit_mesh_params()
+        );
+
+        let unit = snout(600.0).gen_unit_shape();
+        assert_eq!(
+            unit.hash_unit_mesh_params(),
+            snout(600.0).hash_unit_mesh_params(),
+            "单位行重新哈希必须回到同一个键"
+        );
+        let unit = unit.downcast::<LSnout>().unwrap();
+        assert_eq!((unit.segments, unit.pbdm, unit.ptdm), (Some(56), 1.0, 0.5));
+    }
+
+    /// T041 B6：偏心 Snout 的键是整个结构的 bincode 字节；`segments` 为 `None` 时不写出，
+    /// 序列化字节与加字段之前逐位相同（gen-model `t041_b6` 钉的是具体值，这里钉机制）。
+    #[test]
+    fn an_eccentric_snout_serialises_without_the_segments_field() {
+        let eccentric = LSnout {
+            ptdi: 57.6,
+            pbdi: -57.6,
+            ptdm: 84.42,
+            pbdm: 66.33,
+            poff: 12.06,
+            ..Default::default()
+        };
+        assert!(eccentric.is_eccentric());
+        let json = serde_json::to_string(&eccentric).unwrap();
+        assert!(!json.contains("segments"), "{json}");
+
+        // 偏心那支的单位形状就是原件：不带段数，字节不变。
+        let unit = eccentric.gen_unit_shape().downcast::<LSnout>().unwrap();
+        assert_eq!(unit.segments, None);
+        assert_eq!(
+            bincode::serialize(&*unit).unwrap(),
+            bincode::serialize(&eccentric).unwrap()
+        );
     }
 
     /// The eccentric offset is split between the two ends, not piled onto the top.

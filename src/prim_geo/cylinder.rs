@@ -10,12 +10,26 @@ use std::hash::Hash;
 use std::hash::Hasher;
 use std::sync::Arc;
 
-use crate::prim_geo::basic::*;
 use crate::prim_geo::helper::cal_ref_axis;
+use crate::prim_geo::libgm_discretise::{FACET_TOL_MM, cylinder_segments};
 use crate::shape::pdms_shape::{BrepShapeTrait, PlantMesh, RsVec3, TRI_TOL, VerifiedShape};
 use crate::types::attmap::AttrMap;
 
 use crate::NamedAttrMap;
+
+/// 单位圆柱的身份键：绕轴段数是它**唯一**的自由度（gen-model specs/009 T041 A 组）。
+///
+/// 半径不进键——单位行的半径恒为 1，真实尺寸在实例变换的 `scale` 里；进键的是按真实
+/// 半径算出的段数等价类。同一等价类里的所有圆柱共享一行（r=1 与 r=2 在 0.5mm 容差下
+/// 都撞 45° 下限、都是 8 段），跨等价类才分行。`LCylinder` 与非切角 `SCylinder` 的单位
+/// 网格同为单位圆柱，两者都走这一个函数，所以同段数同键、同一行。
+pub fn unit_cylinder_identity(segments: i32) -> u64 {
+    let mut hasher = DefaultHasher::new();
+    segments.hash(&mut hasher);
+    "cylinder".hash(&mut hasher);
+    hasher.finish()
+}
+
 ///元件库里的LCylinder
 #[derive(
     Component,
@@ -38,6 +52,12 @@ pub struct LCylinder {
     //diameter
     pub pdia: f32,
     pub negative: bool,
+    /// 绕轴段数，**只有单位行带**（`gen_unit_shape()` 按真实半径用
+    /// `libgm_discretise::cylinder_segments` 算好写进来）。原件上是 `None`——原件自己
+    /// 有半径，段数随时算得出；单位行的半径已归一成 1，段数不带下去就再也算不回来
+    /// （T041「段数随参数带下去，分发臂改读携带值」）。读取一律走 [`Self::segment_count`]。
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub segments: Option<i32>,
 }
 
 impl Default for LCylinder {
@@ -50,6 +70,26 @@ impl Default for LCylinder {
             ptdi: 0.5,
             pdia: 1.0,
             negative: false,
+            segments: None,
+        }
+    }
+}
+
+impl LCylinder {
+    /// 绕轴段数：单位行读携带值，原件按真实半径现算（`GM_Cylinder::calcFacets`
+    /// 喂自己的半径）。哈希与落库的单位参数都从这里取，两者同源（T041 A3）。
+    #[inline]
+    pub fn segment_count(&self) -> i32 {
+        self.segments
+            .unwrap_or_else(|| cylinder_segments((self.pdia / 2.0) as f64, FACET_TOL_MM))
+    }
+
+    /// 带着段数的单位圆柱：半径 1、高 1，段数由调用方按真实半径给。
+    /// 非切角 `SCylinder` 的单位形状也是它——两者共享同一行单位网格。
+    pub fn unit_with_segments(segments: i32) -> Self {
+        Self {
+            segments: Some(segments),
+            ..Default::default()
         }
     }
 }
@@ -160,11 +200,11 @@ impl BrepShapeTrait for LCylinder {
     }
 
     fn hash_unit_mesh_params(&self) -> u64 {
-        CYLINDER_GEO_HASH
+        unit_cylinder_identity(self.segment_count())
     }
 
     fn gen_unit_shape(&self) -> Box<dyn BrepShapeTrait> {
-        Box::new(Self::default())
+        Box::new(Self::unit_with_segments(self.segment_count()))
     }
 
     #[inline]
@@ -270,6 +310,16 @@ impl SCylinder {
             || tx.abs() > f32::EPSILON
             || ty.abs() > f32::EPSILON
     }
+
+    /// 绕轴段数，按自己的半径现算（`GM_Cylinder` / `GM_SlopeEndCyl` 同一条规则）。
+    ///
+    /// `SCylinder` 自己**不带**段数字段：非切角的单位形状是 [`LCylinder`] 的单位行
+    /// （段数由那边携带），切角柱（SSCL）的单位形状是带真实尺寸的克隆、段数随时算得出
+    /// ——再加一个字段只会让同一件出现两个键，还会改动 SSCL 的 bincode 键（T041 B6）。
+    #[inline]
+    pub fn segment_count(&self) -> i32 {
+        cylinder_segments((self.pdia / 2.0) as f64, FACET_TOL_MM)
+    }
 }
 
 impl VerifiedShape for SCylinder {
@@ -315,7 +365,8 @@ impl BrepShapeTrait for SCylinder {
             "SSCL".hash(&mut hasher);
             hasher.finish()
         } else {
-            CYLINDER_GEO_HASH
+            // 非切角柱与 LCylinder 的单位网格同为单位圆柱：同段数同键、同一行。
+            unit_cylinder_identity(self.segment_count())
         }
     }
 
@@ -323,7 +374,9 @@ impl BrepShapeTrait for SCylinder {
         if self.is_sscl() {
             return Box::new(self.folded());
         }
-        Box::new(Self::default())
+        // 单位形状就是那一行共享的单位圆柱本身——按 `LCylinder` 落库，规范 param 只有
+        // 一个变体（gen-model 2026-08-13 双键 `param` 的教训），段数随之带下去。
+        Box::new(LCylinder::unit_with_segments(self.segment_count()))
     }
 
     #[inline]
@@ -502,6 +555,73 @@ mod tests {
     fn a_180_degree_shear_folds_back_to_a_plain_cylinder() {
         let c = sscl([180.0, 180.0], [-180.0, 180.0]);
         assert!(!c.is_sscl());
-        assert_eq!(c.hash_unit_mesh_params(), CYLINDER_GEO_HASH);
+        let plain = LCylinder {
+            pdia: c.pdia,
+            ..Default::default()
+        };
+        assert_eq!(c.hash_unit_mesh_params(), plain.hash_unit_mesh_params());
+        assert_eq!(c.hash_unit_mesh_params(), unit_cylinder_identity(c.segment_count()));
+    }
+
+    /// T041：单位圆柱的键只有段数一个自由度。同段数等价类共享（r=1 / r=2 都是 8 段），
+    /// 跨等价类分行（r=100 是 32 段，r=295 是 56 段）；LCylinder 与非切角 SCylinder
+    /// 同段数同键。
+    #[test]
+    fn the_unit_cylinder_key_is_its_segment_class() {
+        let lc = |pdia: f32| LCylinder {
+            pdia,
+            ..Default::default()
+        };
+        let sc = |pdia: f32| SCylinder {
+            pdia,
+            ..Default::default()
+        };
+        assert_eq!(lc(2.0).segment_count(), 8);
+        assert_eq!(lc(4.0).segment_count(), 8);
+        assert_eq!(lc(200.0).segment_count(), 32);
+        assert_eq!(lc(590.0).segment_count(), 56);
+
+        assert_eq!(lc(2.0).hash_unit_mesh_params(), lc(4.0).hash_unit_mesh_params());
+        assert_ne!(
+            lc(200.0).hash_unit_mesh_params(),
+            lc(590.0).hash_unit_mesh_params()
+        );
+        assert_eq!(
+            lc(200.0).hash_unit_mesh_params(),
+            sc(200.0).hash_unit_mesh_params(),
+            "非切角 SCylinder 与 LCylinder 同一行"
+        );
+    }
+
+    /// T041 A3：单位行携带段数，重新哈希得到同一个键（键与落库值同源）；两个变体的
+    /// 单位形状落成同一份 `PrimLCylinder` 规范 param。
+    #[test]
+    fn the_unit_row_carries_its_segments_and_rehashes_to_the_same_key() {
+        let lc = LCylinder {
+            pdia: 590.0,
+            ..Default::default()
+        };
+        let sc = SCylinder {
+            pdia: 590.0,
+            phei: 3000.0,
+            ..Default::default()
+        };
+        let unit = lc.gen_unit_shape();
+        assert_eq!(unit.hash_unit_mesh_params(), lc.hash_unit_mesh_params());
+        let unit = unit.downcast::<LCylinder>().expect("unit shape is an LCylinder");
+        assert_eq!(unit.segments, Some(56));
+        assert_eq!(unit.pdia, 1.0);
+
+        let lc_param = serde_json::to_string(&lc.gen_unit_shape().convert_to_geo_param()).unwrap();
+        let sc_param = serde_json::to_string(&sc.gen_unit_shape().convert_to_geo_param()).unwrap();
+        assert_eq!(lc_param, sc_param, "同键必须落同一份规范 param");
+        assert!(lc_param.contains("PrimLCylinder"), "{lc_param}");
+        assert!(lc_param.contains("\"segments\":56"), "{lc_param}");
+
+        // 原件不带段数字段：序列化里没有它，读旧行也不会因缺字段而失败。
+        let raw = serde_json::to_string(&lc).unwrap();
+        assert!(!raw.contains("segments"), "{raw}");
+        let back: LCylinder = serde_json::from_str(&raw).unwrap();
+        assert_eq!(back.segments, None);
     }
 }

@@ -4,6 +4,7 @@ pub mod dish;
 pub mod extrusion;
 pub mod facet;
 pub mod helper;
+pub mod libgm_discretise;
 pub mod lpyramid;
 pub mod polyhedron;
 pub mod pyramid;
