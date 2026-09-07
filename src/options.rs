@@ -10,7 +10,11 @@ pub struct DbOption {
     #[clap(long, default_value = "false")]
     pub enable_log: bool,
     /// 是否全量同步
+    ///
+    /// gen-model 2026-09-07 起不再读它（`sync_pdms` 整条退役，ADR-058 D8），配置文件里
+    /// 也不再写；`serde(default)` 让老配置与新配置都能装进来。
     #[clap(long)]
+    #[serde(default)]
     pub total_sync: bool,
     /// 是否启用索引
     #[clap(long)]
@@ -30,8 +34,9 @@ pub struct DbOption {
     /// 是否同步历史数据
     #[clap(long)]
     pub sync_history: Option<bool>,
-    /// 是否增量同步
+    /// 是否增量同步（gen-model 已退役，见 `total_sync`）
     #[clap(long)]
+    #[serde(default)]
     pub incr_sync: bool,
     /// 是否只同步系统数据
     #[clap(long)]
@@ -228,8 +233,9 @@ pub struct DbOption {
     /// 是否启用多线程
     #[clap(long)]
     pub multi_threads: bool,
-    /// 是否仅同步系统
+    /// 是否仅同步系统（gen-model 已退役，见 `total_sync`）
     #[clap(short)]
+    #[serde(default)]
     pub only_sync_sys: bool,
     /// 平台URL地址
     #[clap(long)]
