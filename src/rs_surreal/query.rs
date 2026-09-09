@@ -91,6 +91,9 @@ pub async fn get_default_name(refno: RefnoEnum) -> anyhow::Result<Option<String>
 /// # 错误
 /// * 如果查询失败会返回错误
 pub async fn query_ancestor_refnos(refno: RefnoEnum) -> anyhow::Result<Vec<RefnoEnum>> {
+    if let Some(ctx) = super::direct::active_direct_reads() {
+        return ctx.provider().query_ancestor_refnos(refno).await;
+    }
     if let Some(ctx) = super::staging::active_staging_reads() {
         return query_ancestor_refnos_on(ctx.db(), refno).await;
     }
@@ -184,8 +187,17 @@ pub async fn get_refno_by_name(name: &str) -> anyhow::Result<Option<RefnoEnum>> 
 ///
 /// # 错误
 /// * 如果查询失败会返回错误
-#[cached(result = true)]
 pub async fn get_ancestor_types(refno: RefnoEnum) -> anyhow::Result<Vec<String>> {
+    if let Some(ctx) = super::direct::active_direct_reads() {
+        return ctx.provider().get_ancestor_types(refno).await;
+    }
+    get_ancestor_types_cached(refno).await
+}
+
+/// direct 上下文缺席时的持久层缓存版。缓存键里没有「世界」这一维，所以 direct 与
+/// staging 都绕开它（ADR-053 / ADR-017 同源理由）。
+#[cached(name = "GET_ANCESTOR_TYPES", result = true)]
+async fn get_ancestor_types_cached(refno: RefnoEnum) -> anyhow::Result<Vec<String>> {
     let sql = format!("return fn::ancestor({}).noun;", refno.to_pe_key());
     let mut response = SUL_DB.query(sql).await?;
     let s = response.take::<Vec<String>>(0);
@@ -204,6 +216,9 @@ pub async fn get_ancestor_types(refno: RefnoEnum) -> anyhow::Result<Vec<String>>
 /// # 错误
 /// * 如果查询失败会返回错误
 pub async fn get_ancestor_attmaps(refno: RefnoEnum) -> anyhow::Result<Vec<NamedAttrMap>> {
+    if let Some(ctx) = super::direct::active_direct_reads() {
+        return ctx.provider().get_ancestor_attmaps(refno).await;
+    }
     if let Some(ctx) = super::staging::active_staging_reads() {
         return get_ancestor_attmaps_on(ctx.db(), refno).await;
     }
@@ -231,6 +246,9 @@ pub async fn get_ancestor_attmaps_on(
 /// # 返回值
 /// * `String` - 类型名称，如果未找到则返回"unset"
 pub async fn get_type_name(refno: RefnoEnum) -> anyhow::Result<String> {
+    if let Some(ctx) = super::direct::active_direct_reads() {
+        return ctx.provider().get_type_name(refno).await;
+    }
     if let Some(ctx) = super::staging::active_staging_reads() {
         return get_type_name_on(ctx.db(), refno)
             .await?
@@ -596,7 +614,12 @@ pub async fn get_ui_named_attmap(refno_enum: RefnoEnum) -> anyhow::Result<NamedA
 }
 
 ///通过surql查询属性数据。暂存读上下文在场时改查暂存库（不经进程缓存）。
+///
+/// ADR-053 direct 读路由：生成期上下文在场时改由 provider 从 E3D 库文件现场取数。
 pub async fn get_named_attmap(refno: RefnoEnum) -> anyhow::Result<NamedAttrMap> {
+    if let Some(ctx) = super::direct::active_direct_reads() {
+        return ctx.provider().get_named_attmap(refno).await;
+    }
     if let Some(ctx) = super::staging::active_staging_reads() {
         return get_named_attmap_on(ctx.db(), refno).await;
     }
@@ -777,8 +800,17 @@ pub(crate) async fn get_named_attmap_with_uda_on(
 
 pub const CATR_QUERY_STR: &'static str = "refno.CATR.refno.CATR, refno.CATR.refno.PRTREF.refno.CATR, refno.SPRE, refno.SPRE.refno.CATR, refno.CATR";
 
-#[cached(result = true)]
+/// ADR-053 direct 读路由。契约 2：这条链上 82% 的引用指向别的库
+/// （实测 ams8000_0001 6461/7876），provider 的实现必须能跨库。
 pub async fn get_cat_refno(refno: RefnoEnum) -> anyhow::Result<Option<RefnoEnum>> {
+    if let Some(ctx) = super::direct::active_direct_reads() {
+        return ctx.provider().get_cat_refno(refno).await;
+    }
+    get_cat_refno_cached(refno).await
+}
+
+#[cached(name = "GET_CAT_REFNO", result = true)]
+async fn get_cat_refno_cached(refno: RefnoEnum) -> anyhow::Result<Option<RefnoEnum>> {
     let sql = format!(
         r#"
         select value [{CATR_QUERY_STR}][where noun in ["SCOM", "SPRF", "SFIT", "JOIN"]]
@@ -808,8 +840,16 @@ pub async fn get_cat_attmap(refno: RefnoEnum) -> anyhow::Result<NamedAttrMap> {
     Ok(named_attmap)
 }
 
-#[cached(result = true)]
+/// ADR-053 direct 读路由。契约 1：返回顺序是语义，provider 必须给记录里的成员原序。
 pub async fn get_children_named_attmaps(refno: RefnoEnum) -> anyhow::Result<Vec<NamedAttrMap>> {
+    if let Some(ctx) = super::direct::active_direct_reads() {
+        return ctx.provider().get_children_named_attmaps(refno).await;
+    }
+    get_children_named_attmaps_cached(refno).await
+}
+
+#[cached(name = "GET_CHILDREN_NAMED_ATTMAPS", result = true)]
+async fn get_children_named_attmaps_cached(refno: RefnoEnum) -> anyhow::Result<Vec<NamedAttrMap>> {
     let sql = format!(
         r#"select value in.refno.*
             ?? type::thing('POINSP', record::id(in)).*
@@ -837,8 +877,17 @@ pub async fn get_children_named_attmaps(refno: RefnoEnum) -> anyhow::Result<Vec<
 }
 
 ///获取所有子孙的参考号
-#[cached(result = true)]
+///
+/// ADR-053 direct 读路由。契约 1：返回顺序是语义，provider 必须给记录里的成员原序。
 pub async fn get_children_pes(refno: RefnoEnum) -> anyhow::Result<Vec<SPdmsElement>> {
+    if let Some(ctx) = super::direct::active_direct_reads() {
+        return ctx.provider().get_children_pes(refno).await;
+    }
+    get_children_pes_cached(refno).await
+}
+
+#[cached(name = "GET_CHILDREN_PES", result = true)]
+async fn get_children_pes_cached(refno: RefnoEnum) -> anyhow::Result<Vec<SPdmsElement>> {
     let sql = format!(
         r#"
             select value in.* from {}<-pe_owner where record::exists(in.id) and !in.deleted
@@ -868,6 +917,9 @@ pub async fn query_filter_children(
     refno: RefnoEnum,
     types: &[&str],
 ) -> anyhow::Result<Vec<RefnoEnum>> {
+    if let Some(ctx) = super::direct::active_direct_reads() {
+        return ctx.provider().query_filter_children(refno, types).await;
+    }
     let nouns_str = types
         .iter()
         .map(|s| format!("'{s}'"))
@@ -901,6 +953,12 @@ pub async fn query_filter_children_atts(
     refno: RefnoEnum,
     types: &[&str],
 ) -> anyhow::Result<Vec<NamedAttrMap>> {
+    if let Some(ctx) = super::direct::active_direct_reads() {
+        return ctx
+            .provider()
+            .query_filter_children_atts(refno, types)
+            .await;
+    }
     let nouns_str = types
         .iter()
         .map(|s| format!("'{s}'"))
@@ -1004,7 +1062,12 @@ pub async fn clear_all_caches_batch(refnos: &[RefnoEnum]) {
 }
 
 ///获得children
+///
+/// ADR-053 direct 读路由。契约 1：返回顺序是语义，provider 必须给记录里的成员原序。
 pub async fn get_children_refnos(refno: RefnoEnum) -> anyhow::Result<Vec<RefnoEnum>> {
+    if let Some(ctx) = super::direct::active_direct_reads() {
+        return ctx.provider().get_children_refnos(refno).await;
+    }
     if super::staging::active_staging_reads().is_some() {
         get_children_refnos_uncached(refno).await
     } else {
@@ -1070,10 +1133,11 @@ pub async fn query_multi_children_refnos(refnos: &[RefnoEnum]) -> anyhow::Result
 pub async fn query_group_by_cata_hash(
     refnos: impl IntoIterator<Item = &RefnoEnum>,
 ) -> anyhow::Result<DashMap<String, CataHashRefnoKV>> {
-    let keys = refnos
-        .into_iter()
-        .map(|x| x.to_pe_key())
-        .collect::<Vec<_>>();
+    let refnos: Vec<RefnoEnum> = refnos.into_iter().copied().collect();
+    if let Some(ctx) = super::direct::active_direct_reads() {
+        return query_group_by_cata_hash_direct(&ctx, &refnos).await;
+    }
+    let keys = refnos.iter().map(|x| x.to_pe_key()).collect::<Vec<_>>();
     let mut result_map: DashMap<String, CataHashRefnoKV> = DashMap::new();
     for chunk in keys.chunks(20) {
         let sql = format!(
@@ -1133,6 +1197,90 @@ pub async fn query_group_by_cata_hash(
     Ok(result_map)
 }
 
+/// [`query_group_by_cata_hash`] 的 direct 形态：**这个收口函数是混合读，必须拆两半。**
+///
+/// SQL 里同时问两件事：「自身 + 直接子元素里，哪些不是 BRAN/HANG、没删、cata_hash 是什么」
+/// —— 源模型，文件里有；以及「这个 cata_hash 是否已经有 `inst_info`、它的 ptset 是什么」
+/// —— **产物，只在 Surreal 里，文件侧根本读不到**。
+///
+/// 所以源模型那半问 provider，产物那半照旧查库，再在这里合并。
+/// 整体交给 provider 会让「已生成过」判定永远为假，表现为重复生成；而两模式的产物 hash
+/// 仍然一致，**双跑对拍照样绿**（规格 `direct-mode-query-surface.md` §2.3）。
+async fn query_group_by_cata_hash_direct(
+    ctx: &super::direct::DirectReadContext,
+    refnos: &[RefnoEnum],
+) -> anyhow::Result<DashMap<String, CataHashRefnoKV>> {
+    const SKIPPED_NOUNS: [&str; 2] = ["BRAN", "HANG"];
+    let provider = ctx.provider();
+
+    // 源模型半边。子元素按记录里的成员原序取（契约 1），这里只做过滤、不重排。
+    let mut candidates: Vec<RefnoEnum> = Vec::new();
+    let mut seen: std::collections::HashSet<RefnoEnum> = std::collections::HashSet::new();
+    for &refno in refnos {
+        if !SKIPPED_NOUNS.contains(&provider.get_type_name(refno).await?.as_str())
+            && seen.insert(refno)
+        {
+            candidates.push(refno);
+        }
+        for child in provider.get_children_pes(refno).await? {
+            if child.deleted || SKIPPED_NOUNS.contains(&child.noun.as_str()) {
+                continue;
+            }
+            if seen.insert(child.refno) {
+                candidates.push(child.refno);
+            }
+        }
+    }
+
+    let mut grouped: DashMap<String, CataHashRefnoKV> = DashMap::new();
+    for (refno, cata_hash) in provider.cata_hash_of(&candidates).await? {
+        grouped
+            .entry(cata_hash.clone())
+            .or_insert_with(|| CataHashRefnoKV {
+                cata_hash,
+                group_refnos: Vec::new(),
+                exist_inst: false,
+                ptset: None,
+            })
+            .group_refnos
+            .push(refno);
+    }
+
+    // 产物半边：只按 cata_hash 问库，不碰任何源模型字段。
+    let hashes = grouped
+        .iter()
+        .map(|kv| kv.key().clone())
+        .collect::<Vec<_>>();
+    for chunk in hashes.chunks(200) {
+        let list = chunk.iter().map(|h| format!("'{h}'")).join(",");
+        // 行在即已生成过：`exist_inst` 是「这一行存在」本身，不用再问一次。
+        let sql = format!(
+            "select record::id(id) as cata_hash, ptset from inst_info \
+             where record::id(id) in [{list}];"
+        );
+        let mut response = SUL_DB.query(&sql).await?;
+        let rows: Vec<InstInfoProbe> = response.take(0).unwrap_or_default();
+        for row in rows {
+            if let Some(mut entry) = grouped.get_mut(&row.cata_hash) {
+                entry.exist_inst = true;
+                entry.ptset = row.ptset.map(|x| {
+                    x.into_iter()
+                        .filter_map(|(k, v)| k.parse().ok().map(|k| (k, v)))
+                        .collect()
+                });
+            }
+        }
+    }
+    Ok(grouped)
+}
+
+/// [`query_group_by_cata_hash_direct`] 的产物半边行。
+#[derive(Debug, Deserialize)]
+struct InstInfoProbe {
+    cata_hash: String,
+    ptset: Option<BTreeMap<String, CateAxisParam>>,
+}
+
 #[serde_as]
 #[derive(Debug, Default, Serialize, Deserialize)]
 pub struct PdmsSpreName {
@@ -1166,6 +1314,12 @@ pub async fn query_single_by_paths(
     paths: &[&str],
     fields: &[&str],
 ) -> anyhow::Result<NamedAttrMap> {
+    if let Some(ctx) = super::direct::active_direct_reads() {
+        return ctx
+            .provider()
+            .query_single_by_paths(refno, paths, fields)
+            .await;
+    }
     let mut ps = vec![];
     for &path in paths {
         let p = path.replace("->", ".refno.");

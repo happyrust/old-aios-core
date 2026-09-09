@@ -28,7 +28,11 @@ pub async fn query_filter_all_bran_hangs(refno: RefnoEnum) -> anyhow::Result<Vec
     query_filter_deep_children(refno, &["BRAN", "HANG"]).await
 }
 
+/// ADR-053 direct 读路由。契约 1：深度优先、每层按记录里的成员原序，不重排。
 pub async fn query_deep_children_refnos(refno: RefnoEnum) -> anyhow::Result<Vec<RefnoEnum>> {
+    if let Some(ctx) = super::direct::active_direct_reads() {
+        return ctx.provider().query_deep_children_refnos(refno).await;
+    }
     if super::staging::active_staging_reads().is_some() {
         query_deep_children_refnos_uncached(refno).await
     } else {
@@ -114,10 +118,17 @@ pub async fn query_deep_children_refnos_pbs(refno: Thing) -> anyhow::Result<Vec<
     };
 }
 
+/// ADR-053 direct 读路由。契约 1：过滤不改变原序。
 pub async fn query_filter_deep_children(
     refno: RefnoEnum,
     nouns: &[&str],
 ) -> anyhow::Result<Vec<RefnoEnum>> {
+    if let Some(ctx) = super::direct::active_direct_reads() {
+        return ctx
+            .provider()
+            .query_filter_deep_children(refno, nouns)
+            .await;
+    }
     let refnos = query_deep_children_refnos(refno).await?;
     let pe_keys = refnos.into_iter().map(|x| x.to_pe_key()).join(",");
     let nouns_str = rs_surreal::convert_to_sql_str_array(nouns);
@@ -141,10 +152,23 @@ pub async fn query_filter_deep_children(
     Ok(vec![])
 }
 
+/// ADR-053 direct 读路由。**复合读**：`query_filter_deep_children` 之后逐个取属性，
+/// 两半都已在 provider 上（`query_filter_deep_children` / `get_named_attmap`），
+/// 所以这里就地组合，不给 provider 再加一个方法 —— 否则同一套「先取谁再取谁」
+/// 在两侧各存一份，正是 ADR-053 R1 说的语义漂移。
 pub async fn query_filter_deep_children_atts(
     refno: RefnoEnum,
     nouns: &[&str],
 ) -> anyhow::Result<Vec<NamedAttrMap>> {
+    if let Some(ctx) = super::direct::active_direct_reads() {
+        let provider = ctx.provider();
+        let refnos = provider.query_filter_deep_children(refno, nouns).await?;
+        let mut atts = Vec::with_capacity(refnos.len());
+        for child in refnos {
+            atts.push(provider.get_named_attmap(child).await?);
+        }
+        return Ok(atts);
+    }
     let refnos = query_deep_children_refnos(refno).await?;
     // dbg!(refnos.len());
     let mut atts = vec![];
@@ -240,10 +264,21 @@ pub async fn query_filter_deep_children_by_path(
 }
 
 //过滤spre 和 catr 不能同时为空的类型,
+///
+/// ADR-053 direct 读路由。**混合读**：`SPRE`/`CATR` 非空是源模型，而 `filter` 那半
+/// （还没有 `inst_relate` / `tubi_relate`）是产物。源模型半边问 provider，产物半边
+/// 留在这里查库 —— 理由同 `query_group_by_cata_hash`，见规格 §2.3。
 pub async fn query_deep_children_refnos_filter_spre(
     refno: RefnoEnum,
     filter: bool,
 ) -> anyhow::Result<Vec<RefnoEnum>> {
+    if let Some(ctx) = super::direct::active_direct_reads() {
+        let candidates = ctx
+            .provider()
+            .query_deep_children_refnos_filter_spre(refno)
+            .await?;
+        return retain_ungenerated(candidates, filter).await;
+    }
     let pe_key = refno.to_pe_key();
     let mut sql = format!(
         r#"
@@ -330,6 +365,31 @@ async fn query_deep_children_filter_inst(
     Ok(result)
 }
 
+/// 产物半边：从一批候选里留下**还没有生成过**的（`inst_relate` / `tubi_relate` 都为空）。
+///
+/// direct 上下文里也走 Surreal，而且是**有意的**：这问的是产物，文件里没有。
+/// `filter == false` 时调用方不要这层过滤，原样返回。
+async fn retain_ungenerated(
+    candidates: Vec<RefnoEnum>,
+    filter: bool,
+) -> anyhow::Result<Vec<RefnoEnum>> {
+    if !filter || candidates.is_empty() {
+        return Ok(candidates);
+    }
+    let mut kept = Vec::with_capacity(candidates.len());
+    for chunk in candidates.chunks(200) {
+        let pe_keys = chunk.iter().map(|x| x.to_pe_key()).join(",");
+        let sql = format!(
+            "select value id from [{pe_keys}] \
+             where array::len(->inst_relate) = 0 and array::len(->tubi_relate) = 0"
+        );
+        let mut response = super::staging::data_db().query(&sql).await?;
+        let ungenerated: Vec<RefnoEnum> = response.take(0)?;
+        kept.extend(ungenerated);
+    }
+    Ok(kept)
+}
+
 pub async fn query_multi_filter_deep_children(
     refnos: &[RefnoEnum],
     nouns: &[&str],
@@ -342,6 +402,12 @@ pub async fn query_multi_filter_deep_children(
     Ok(result)
 }
 
+/// ADR-053 direct 读路由。**混合读，本规格里最容易做错的一条**：SQL 同时问
+/// 「深层 children 里哪些是这些 noun」（源模型）与「其中哪些还没有 `inst_relate` /
+/// `tubi_relate`」（产物）。产物只在 Surreal 里，文件侧读不到。
+///
+/// 整体交给 provider 会让「已生成过」判定永远为假 —— 重复生成或漏生成，
+/// 而两模式产物 hash 仍一致，**双跑对拍照样绿**（规格 §2.3）。
 pub async fn query_multi_deep_versioned_children_filter_inst(
     refnos: &[RefnoEnum],
     nouns: &[&str],
@@ -349,6 +415,14 @@ pub async fn query_multi_deep_versioned_children_filter_inst(
 ) -> anyhow::Result<BTreeSet<RefnoEnum>> {
     if refnos.is_empty() {
         return Ok(Default::default());
+    }
+    if let Some(ctx) = super::direct::active_direct_reads() {
+        let candidates = ctx
+            .provider()
+            .deep_versioned_children_by_noun(refnos, nouns)
+            .await?;
+        let kept = retain_ungenerated(candidates.into_iter().collect(), filter).await?;
+        return Ok(kept.into_iter().collect());
     }
     let mut result = BTreeSet::new();
     let mut skip_set = BTreeSet::new();

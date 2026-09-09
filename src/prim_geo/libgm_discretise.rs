@@ -113,16 +113,16 @@ pub struct PartRev {
     pub end_deg: f64,
 }
 
-/// `d2_numberOfSegmentsForPartRev(radius, tol, &start, &end, &isFull)`：部分回转分几段。
+/// `d2_numberOfSegmentsForPartRev` 的区间归一化：把终止角折进 `(start, start + 360]`。
 ///
-/// 先把区间归一化到 `start < end ≤ start + 360`，再**按整圈段数等比例缩**
-/// （不是拿扫角直接除步长——那样得到的数跟 E3D 会差一段），最少 2 段。
-/// 扫角在 1e-6 度内等于 0 或 360 时判整圈，起止角改写成 0/360。
-pub fn part_rev_segments(radius: f64, chord_tol: f64, start_deg: f64, end_deg: f64) -> PartRev {
+/// 起止角是**圆上的两个位置**（弧永远从 `start` 逆时针走到归一化后的 `end`），不是
+/// 带符号的扫角——`(0, −90)` 归一成 `(0, 270)`：一段 270° 的逆时针弧，**不是**
+/// 「顺时针扫 90°」。
+fn normalize_part_rev_interval(start_deg: f64, end_deg: f64) -> (f64, f64) {
     let mut start = start_deg;
     let mut end = end_deg;
     // libgm 是 while 循环逐圈加减，角度大到几万度会转很久；这里直接算差几圈，
-    // 结果与逐圈推进一致（NaN / 无穷大交给下面的 is_finite 兜底）。
+    // 结果与逐圈推进一致（NaN / 无穷大原样返回，交给调用方的 is_finite 兜底）。
     if start.is_finite() && end.is_finite() {
         if start >= end {
             let turns = ((start - end) / 360.0).floor() + 1.0;
@@ -133,6 +133,44 @@ pub fn part_rev_segments(radius: f64, chord_tol: f64, start_deg: f64, end_deg: f
             end -= 360.0 * turns;
         }
     }
+    (start, end)
+}
+
+/// Core3D 建体的「ANGL → 实际扫角」：**起始角恒 0、ANGL 原样当终止角**，返回
+/// `(扫角 ∈ (0, 360]，是否整圈)`；整圈时扫角给 360。
+///
+/// 取证（3.1）：REVO / NREV 走 `CSG_BasicREV::getPrimGeom`（`0x107270C0`）进
+/// `sub_1071C4F0`，四处 `gm_CreateRevolution` 全是 `(0.0, ANGL)` 或它的对半拆分；
+/// CTOR `CSG_BasicCTO::getPrimGeom`（`0x10726BE0`）与 RTOR `CSG_BasicRTO::getPrimGeom`
+/// （`0x10727140`）同样 `(…, 0.0, ANGL)`。区间归一化发生在 libgm 的
+/// `d2_numberOfSegmentsForPartRev` 里，所以：
+///
+/// ```text
+/// ANGL = 90  → (90°,  非整圈)      ANGL = 0 / ±360 → (360°, 整圈)
+/// ANGL = −30 → (330°, 非整圈)      ANGL = 450      → (90°,  非整圈)
+/// ```
+///
+/// 负 ANGL **不是**「顺时针扫 |ANGL|」，是 0° 到 `ANGL + 360°` 的逆时针补弧；
+/// 零扫角判整圈的门槛与 [`part_rev_segments`] 同一处（1e-6 度）。网格生成侧要跟
+/// 段数侧共用这一次归一化——段数一直按归一化区间配，弧再按带符号扫角画，就是
+/// 「270° 的段数配 90° 的弧」的自相矛盾。
+pub fn part_rev_sweep_deg(finish_deg: f64) -> (f64, bool) {
+    let (start, end) = normalize_part_rev_interval(0.0, finish_deg);
+    let sweep = end - start;
+    if (sweep.abs() <= 1e-6) || ((sweep - 360.0).abs() <= 1e-6) {
+        (360.0, true)
+    } else {
+        (sweep, false)
+    }
+}
+
+/// `d2_numberOfSegmentsForPartRev(radius, tol, &start, &end, &isFull)`：部分回转分几段。
+///
+/// 先把区间归一化到 `start < end ≤ start + 360`，再**按整圈段数等比例缩**
+/// （不是拿扫角直接除步长——那样得到的数跟 E3D 会差一段），最少 2 段。
+/// 扫角在 1e-6 度内等于 0 或 360 时判整圈，起止角改写成 0/360。
+pub fn part_rev_segments(radius: f64, chord_tol: f64, start_deg: f64, end_deg: f64) -> PartRev {
+    let (start, end) = normalize_part_rev_interval(start_deg, end_deg);
 
     let n_full = circle_segments(radius, chord_tol);
     let sweep = end - start;
@@ -404,6 +442,20 @@ mod tests {
         assert_eq!(sphere_stacks(32), 16);
         assert_eq!(sphere_stacks(8), 4);
         assert_eq!(sphere_stacks(1), 1, "退化输入也不许给 0 带");
+    }
+
+    /// Core3D 起始角恒 0、ANGL 当终止角（CSG_BasicCTO/RTO/REV），实际扫角要过
+    /// partRev 的区间归一化——负角是逆时针补弧、零角与 ±360 是整圈、超 360 减圈，
+    /// 不是带符号的扫掠。
+    #[test]
+    fn angl_normalises_like_the_part_rev_interval() {
+        assert_eq!(part_rev_sweep_deg(90.0), (90.0, false));
+        assert_eq!(part_rev_sweep_deg(360.0), (360.0, true));
+        assert_eq!(part_rev_sweep_deg(0.0), (360.0, true), "ANGL=0 是整圈，不是空几何");
+        assert_eq!(part_rev_sweep_deg(-30.0), (330.0, false), "负角 = 0°→330° 的补弧");
+        assert_eq!(part_rev_sweep_deg(-360.0), (360.0, true));
+        assert_eq!(part_rev_sweep_deg(450.0), (90.0, false), "超 360 减圈归一化");
+        assert_eq!(part_rev_sweep_deg(720.0), (360.0, true));
     }
 
     #[test]

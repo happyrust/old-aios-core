@@ -35,7 +35,11 @@ pub mod operation;
 /// ADR-017 暂存读路由（STAGE_DB 句柄与批次执行上下文）。
 pub mod staging;
 
+/// ADR-053 direct 读路由（provider trait 与生成期执行上下文）。
+pub mod direct;
+
 pub use cate::*;
+pub use direct::*;
 pub use e3d_db::*;
 pub use geom::*;
 pub use graph::*;

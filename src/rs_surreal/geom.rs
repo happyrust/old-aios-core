@@ -29,7 +29,12 @@ pub fn get_inst_relate_keys(refnos: &[RefnoEnum]) -> String {
 }
 
 ///获得当前参考号对应的loops （例如Panel下的loops，可能有多个）
+///
+/// ADR-053 direct 读路由：顶点串与高度都是源属性派生，文件侧读得到。
 pub async fn fetch_loops_and_height(refno: RefnoEnum) -> anyhow::Result<(Vec<Vec<Vec3>>, f32)> {
+    if let Some(ctx) = super::direct::active_direct_reads() {
+        return ctx.provider().fetch_loops_and_height(refno).await;
+    }
     let sql = format!(
         r#"
         select value (select value [

@@ -176,7 +176,11 @@ pub fn cal_cutp_ori(axis_dir: DVec3, cutp: DVec3) -> DQuat {
     ))
 }
 
+/// ADR-053 direct 读路由：SPINE 顶点串是源模型数据。
 pub async fn get_spline_pts(refno: RefnoEnum) -> anyhow::Result<Vec<DVec3>> {
+    if let Some(ctx) = super::direct::active_direct_reads() {
+        return ctx.provider().get_spline_pts(refno).await;
+    }
     if let Some(ctx) = super::staging::active_staging_reads() {
         return get_spline_pts_on(ctx.db(), refno).await;
     }
@@ -201,7 +205,20 @@ pub async fn get_spline_line_dir(refno: RefnoEnum) -> anyhow::Result<DVec3> {
 
 /// 暂存读上下文在场时不经进程缓存直接算（内部读已被上下文路由到暂存库）；
 /// 否则走持久层缓存版，行为与历史一致。
+///
+/// ADR-053 direct 上下文同理，且**它是复合读**：祖先链折叠本身不打库，原料来自
+/// `get_ancestor_attmaps` / `query_ancestor_refnos` / `get_spline_pts`，三者各自已路由。
+/// 所以这里只需要绕开进程缓存（缓存键里没有「世界」这一维），不需要 provider 方法 ——
+/// 把折叠逻辑也搬进 provider 会让同一套算法在两侧各存一份（ADR-053 R1）。
+///
+/// 实测佐证（t-357，6 个真库 588142 个元素）：**owner 链不跨库**，所以祖先上溯
+/// 单库句柄就够，不需要跨库定位器。
 pub async fn get_world_transform(refno: RefnoEnum) -> anyhow::Result<Option<Transform>> {
+    if super::direct::active_direct_reads().is_some() {
+        return get_world_mat4_impl(refno, false)
+            .await
+            .map(|m| m.map(|x| Transform::from_matrix(x.as_mat4())));
+    }
     if super::staging::active_staging_reads().is_some() {
         return get_world_mat4_impl(refno, false)
             .await
@@ -601,7 +618,7 @@ pub async fn query_pline(refno: RefnoEnum, jusl: String) -> anyhow::Result<Optio
         .get_foreign_refno("PSTR")
         .unwrap_or(cat_att.get_foreign_refno("PTSS").unwrap_or_default());
     if !psref.is_valid() {
-        return Ok(None);
+        return implicit_wall_pline(refno, &jusl).await;
     }
     let c_refnos = crate::get_children_refnos(psref).await.unwrap_or_default();
     // dbg!(&c_refnos);
@@ -636,7 +653,30 @@ pub async fn query_pline(refno: RefnoEnum, jusl: String) -> anyhow::Result<Optio
             return Ok(Some(plin_data));
         }
     }
-    Ok(None)
+    implicit_wall_pline(refno, &jusl).await
+}
+
+/// E3D 墙体隐式 pline 兜底：墙 Profile(SPRF) 的 PTSS 通常不含 OBOW/IBOW 这类
+/// PTCA（E3D 按剖面约定内部推导），目录查不到时按约定合成方向。
+///
+/// 扫掠帧约定（线/弧支路一致）：X=行进左法向、Y=上、Z=切向 →
+/// 外侧面 OBOW = -X、内侧面 IBOW = +X；锚点在 justification line 上（无平面内偏移）。
+/// 依据 WF03 RVM FIXING 世界坐标反解验证（1RS-WF03-W-C-RR001，误差 0.15mm）；
+/// 兜底取 +X 时 PLDATU 复合帧绕切向反 180°，FIXING 落到墙外，开孔布尔失效。
+async fn implicit_wall_pline(refno: RefnoEnum, jusl: &str) -> anyhow::Result<Option<PlinParamData>> {
+    let plax = match jusl {
+        "OBOW" => -DVec3::X,
+        "IBOW" => DVec3::X,
+        _ => return Ok(None),
+    };
+    let type_name = crate::get_type_name(refno).await.unwrap_or_default();
+    if type_name != "WALL" && type_name != "STWALL" {
+        return Ok(None);
+    }
+    Ok(Some(PlinParamData {
+        pt: DVec3::ZERO,
+        plax,
+    }))
 }
 
 #[derive(Debug)]
