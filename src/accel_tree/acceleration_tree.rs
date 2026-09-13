@@ -14,6 +14,7 @@ use rstar::Envelope;
 use serde_derive::{Deserialize, Serialize};
 use serde_with::{As, FromInto, serde_as};
 use smallvec::SmallVec;
+use std::borrow::Cow;
 use std::cell::{Cell, RefCell};
 use std::collections::HashMap;
 use std::collections::HashSet;
@@ -296,6 +297,32 @@ impl AccelerationTree {
         removed
     }
 
+    /// 某个 refno 在树上的全部条目：正常恰好一条，历史堆叠的残留可能多条，没有则空。
+    ///
+    /// 走 `refno_index` 的只读查询（`&self`，不触发懒重建）。索引在 [`Self::load`] /
+    /// [`Self::replace`] / [`Self::sync_refnos`] / [`Self::remove_by_refnos`] /
+    /// [`Self::deserialize_from_bin_file`] 之后恒新鲜；两种情况下它是过期的——直接
+    /// `bincode::deserialize` 出来的树（`#[serde(skip)]` 让索引落成空表，下游的快照装载
+    /// 正是这条路）与经 `DerefMut` / pub `tree` 绕过 API 的改动。过期时退化为整树线性扫描：
+    /// 结果仍然正确，只是 O(n)。这里**不** `debug_assert!`——快照复用启动后到第一次写树
+    /// 之前索引一直是过期的，断言会让 debug 构建的服务在第一条按 refno 的查询上崩掉；
+    /// 写路径下一次 [`Self::ensure_refno_index`] 会把它治愈。
+    pub fn entries_of(&self, refno: RefU64) -> Cow<'_, [RStarBoundingBox]> {
+        if self.indexed_tree_len == self.tree.size() {
+            return match self.refno_index.get(&refno) {
+                Some(entries) => Cow::Borrowed(entries.as_slice()),
+                None => Cow::Borrowed(&[]),
+            };
+        }
+        Cow::Owned(
+            self.tree
+                .iter()
+                .filter(|bbox| bbox.refno == refno)
+                .cloned()
+                .collect(),
+        )
+    }
+
     pub fn query_within_distance<'a>(
         &'a self,
         loc: Vec3,
@@ -540,6 +567,73 @@ mod tests {
         assert_eq!(removed, 2);
         assert_eq!(tree.size(), 1);
         assert_eq!(tree.iter().next().unwrap().refno, bbox(2, 40.0, 50.0).refno);
+    }
+
+    /// 只读按 refno 取盒：同一 refno 的全部条目（含历史堆叠）都要给，别的 refno 一条不混进来；
+    /// 写路径之后索引必须仍然准确。
+    #[test]
+    fn entries_of_returns_all_boxes_of_a_refno_and_nothing_else() {
+        let mut tree = AccelerationTree::load(vec![
+            bbox(1, 0.0, 10.0),
+            bbox(1, 20.0, 30.0),
+            bbox(2, 40.0, 50.0),
+        ]);
+
+        let mut ones = tree.entries_of(bbox(1, 0.0, 10.0).refno).into_owned();
+        ones.sort_by(|a, b| a.aabb.mins.x.total_cmp(&b.aabb.mins.x));
+        assert_eq!(ones, vec![bbox(1, 0.0, 10.0), bbox(1, 20.0, 30.0)]);
+        assert_eq!(
+            tree.entries_of(bbox(2, 40.0, 50.0).refno).as_ref(),
+            &[bbox(2, 40.0, 50.0)]
+        );
+        assert!(tree.entries_of(bbox(3, 0.0, 1.0).refno).is_empty());
+
+        tree.sync_refnos(vec![bbox(1, 100.0, 110.0)]);
+        assert_eq!(
+            tree.entries_of(bbox(1, 0.0, 10.0).refno).as_ref(),
+            &[bbox(1, 100.0, 110.0)],
+            "同步之后只剩新盒"
+        );
+        tree.remove_by_refnos(&HashSet::from([bbox(2, 40.0, 50.0).refno]));
+        assert!(tree.entries_of(bbox(2, 40.0, 50.0).refno).is_empty());
+        assert_eq!(tree.entries_of(bbox(1, 0.0, 10.0).refno).len(), 1);
+    }
+
+    /// 索引过期（直接 bincode 反序列化、绕过 API 直插 `tree`）时 `entries_of` 退化为线性扫描，
+    /// 结果仍要正确且不能 panic；写路径治愈索引后又回到索引查找。
+    #[test]
+    fn entries_of_falls_back_to_a_linear_scan_while_the_index_is_stale() {
+        let loaded = AccelerationTree::load(vec![bbox(1, 0.0, 10.0), bbox(2, 20.0, 30.0)]);
+        let bytes = bincode::serialize(&loaded).unwrap();
+        let mut restored: AccelerationTree = bincode::deserialize(&bytes).unwrap();
+        assert_ne!(
+            restored.indexed_tree_len,
+            restored.tree.size(),
+            "直接反序列化的树索引应当是过期的（前提不成立则本用例没在测回退路径）"
+        );
+        assert_eq!(
+            restored.entries_of(bbox(2, 20.0, 30.0).refno).as_ref(),
+            &[bbox(2, 20.0, 30.0)]
+        );
+        assert!(restored.entries_of(bbox(9, 0.0, 1.0).refno).is_empty());
+
+        restored.tree.insert(bbox(3, 40.0, 50.0));
+        assert_eq!(
+            restored.entries_of(bbox(3, 40.0, 50.0).refno).as_ref(),
+            &[bbox(3, 40.0, 50.0)],
+            "绕过 API 直插的条目也要在扫描里找到"
+        );
+
+        restored.sync_refnos(vec![bbox(1, 100.0, 110.0)]);
+        assert_eq!(restored.indexed_tree_len, restored.tree.size(), "写路径治愈索引");
+        assert_eq!(
+            restored.entries_of(bbox(3, 40.0, 50.0).refno).as_ref(),
+            &[bbox(3, 40.0, 50.0)]
+        );
+        assert_eq!(
+            restored.entries_of(bbox(1, 0.0, 10.0).refno).as_ref(),
+            &[bbox(1, 100.0, 110.0)]
+        );
     }
 
     #[test]
