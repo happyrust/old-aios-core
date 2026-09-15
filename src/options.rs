@@ -105,6 +105,9 @@ pub struct DbOption {
     pub load_spatial_tree: bool,
     #[clap(long, default_value = "12.1SP4Projects")]
     pub project_path: String,
+    /// 已退役（gen-model ADR-078，2026-09-15）：项目集合由 MDB 声明派生，这一项不再参与解析。
+    /// `serde(default)` 让删掉这个键的新配置与写着名单的老配置都能装进来。
+    #[serde(default)]
     pub included_projects: Vec<String>,
     //覆盖project的目录名
     pub project_dirs: Option<Vec<String>>,
