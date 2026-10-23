@@ -90,7 +90,7 @@ hash32 = "0.3.0"
 bincode = "1.3.3"
 clap = { version = "^4.0", features = ["derive"] }
 
-rkyv = { version = "0.7.42", features = ["hashbrown"] }
+rkyv = { version = "0.7.42", features = ["hashbrown", "validation"] }
 serde_with = { version = "3.9.0", features = ["macros"] }
 
 

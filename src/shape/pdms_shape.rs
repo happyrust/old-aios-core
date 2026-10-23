@@ -29,6 +29,31 @@ use std::vec;
 
 pub const TRIANGLE_TOL: f64 = 0.01;
 
+/// Vec3's existing archive is three native f32s, but glam's optional CheckBytes
+/// targets a different bytecheck version. Use rkyv's checked array representation
+/// without changing the on-disk bytes (covered by the legacy compatibility test).
+pub struct MeshVec3Archive;
+
+impl rkyv::with::ArchiveWith<Vec3> for MeshVec3Archive {
+    type Archived = rkyv::Archived<[f32; 3]>;
+    type Resolver = rkyv::Resolver<[f32; 3]>;
+    unsafe fn resolve_with(field: &Vec3, pos: usize, resolver: Self::Resolver, out: *mut Self::Archived) {
+        unsafe { rkyv::Archive::resolve(&field.to_array(), pos, resolver, out); }
+    }
+}
+impl<S: rkyv::Fallible + ?Sized> rkyv::with::SerializeWith<Vec3, S> for MeshVec3Archive
+where [f32; 3]: rkyv::Serialize<S> {
+    fn serialize_with(field: &Vec3, serializer: &mut S) -> Result<Self::Resolver, S::Error> {
+        rkyv::Serialize::serialize(&field.to_array(), serializer)
+    }
+}
+impl<D: rkyv::Fallible + ?Sized> rkyv::with::DeserializeWith<rkyv::Archived<[f32; 3]>, Vec3, D> for MeshVec3Archive
+where rkyv::Archived<[f32; 3]>: rkyv::Deserialize<[f32; 3], D> {
+    fn deserialize_with(field: &rkyv::Archived<[f32; 3]>, deserializer: &mut D) -> Result<Vec3, D::Error> {
+        Ok(Vec3::from_array(rkyv::Deserialize::deserialize(field, deserializer)?))
+    }
+}
+
 pub trait VerifiedShape {
     fn check_valid(&self) -> bool {
         true
@@ -47,10 +72,14 @@ pub trait VerifiedShape {
     rkyv::Deserialize,
     rkyv::Serialize,
 )]
+#[archive(check_bytes)]
 pub struct PlantMesh {
     pub indices: Vec<u32>,
+    #[with(rkyv::with::Map<MeshVec3Archive>)]
     pub vertices: Vec<Vec3>,
+    #[with(rkyv::with::Map<MeshVec3Archive>)]
     pub normals: Vec<Vec3>,
+    #[with(rkyv::with::Map<rkyv::with::Map<MeshVec3Archive>>)]
     pub wire_vertices: Vec<Vec<Vec3>>,
     pub aabb: Option<Aabb>,
 }
@@ -194,18 +223,24 @@ impl PlantMesh {
     pub fn des_mesh_file(file_path: &dyn AsRef<Path>) -> anyhow::Result<Self> {
         let mut file = File::open(file_path)?;
         let mut buf: Vec<u8> = Vec::new();
-        file.read_to_end(&mut buf).ok();
-        use rkyv::Deserialize;
-        let archived = unsafe { rkyv::archived_root::<Self>(buf.as_slice()) };
-        let r: Self = archived.deserialize(&mut rkyv::Infallible)?;
-        Ok(r)
+        file.read_to_end(&mut buf)?;
+        Self::des_from_bytes(&buf)
     }
 
     ///从bytes反序列化
     pub fn des_from_bytes(bytes: &[u8]) -> anyhow::Result<Self> {
         use rkyv::Deserialize;
-        let archived = unsafe { rkyv::archived_root::<Self>(bytes) };
+        // Files, downloads and cache entries are untrusted archives. A panic
+        // catcher cannot recover from unchecked out-of-bounds pointer access.
+        let mut aligned = rkyv::AlignedVec::with_capacity(bytes.len());
+        aligned.extend_from_slice(bytes);
+        let archived = rkyv::check_archived_root::<Self>(&aligned)
+            .map_err(|error| anyhow!("invalid PlantMesh archive: {error}"))?;
         let r: Self = archived.deserialize(&mut rkyv::Infallible)?;
+        anyhow::ensure!(
+            r.indices.iter().all(|&index| (index as usize) < r.vertices.len()),
+            "invalid PlantMesh archive: triangle index outside vertex buffer"
+        );
         Ok(r)
     }
 
