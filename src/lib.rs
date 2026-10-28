@@ -109,6 +109,9 @@ pub mod export_data;
 
 pub use crate::types::*;
 pub use rs_surreal::*;
+/// 存储架构版本号模块。`pub use rs_surreal::*` 只带出 `rs_surreal/mod.rs` 里
+/// 各子模块的 glob re-export，不带出子模块本身，所以要单独列一次。
+pub use rs_surreal::model_storage;
 
 pub type BHashMap<K, V> = BTreeMap<K, V>;
 

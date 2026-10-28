@@ -1,5 +1,5 @@
 use crate::SurlValue;
-use crate::pdms_pluggin::heat_dissipation::InstPointMap;
+use crate::pdms_pluggin::heat_dissipation::{InstPointMap, InstPointMapRow};
 use crate::pe::SPdmsElement;
 use crate::{NamedAttrMap, RefnoEnum};
 use crate::{init_test_surreal, query_filter_deep_children, types::*};
@@ -184,21 +184,50 @@ pub async fn query_refnos_has_pos_neg_map(
     Ok(result)
 }
 
+/// 点集的读法（三个 `*_point_map` 查询共用）。
+///
+/// `pe_ptset` 是唯一权威：gen-model 在发布事务里按 `pe` 同键写的分表，
+/// 行形状见 gen-model `docs/plans/2026-10-26-ptset-split-table-plan.md` §3。
+///
+/// **不再有 legacy 兜底**。旧的 `->inst_relate.out.ptset[0]` 读法已删除：
+/// 老库的行形状读不懂，静默回空集会被误当成「这件没有点」，
+/// 所以改成在同一条 SQL 里带出存储架构版本，由 [`InstPointMap::try_from`] 判错。
+///
+/// `$pe` 是一个指向 `pe` 记录的表达式（`id` 或 `in.id`）。三段投影：
+///
+/// 1. `dbnum`——库号，用来定位水位行；
+/// 2. `dbnum_storage_version`——`dbnum_watermark:{dbnum}.model_storage_version`，缺列即老库；
+/// 3. `ptset_row`——`pe_ptset:{pe}` 整行（版本 + 点集），没有行时为 none。
+fn ptset_map_projection(pe: &str) -> String {
+    format!(
+        "{pe}.dbnum as dbnum, \
+         type::thing('dbnum_watermark', {pe}.dbnum).model_storage_version as dbnum_storage_version, \
+         (select storage_version, ptset from only type::thing('pe_ptset', record::id({pe}))) as ptset_row"
+    )
+}
+
 /// 查询bran下所有元件的点集
+///
+/// 库的存储架构版本对不上时返回 `Err(ModelStorageVersionMismatch)`，
+/// 不再静默回空 `Vec`：调用方必须能区分「没有点」和「这个库要重建」。
 pub async fn query_bran_children_point_map(refno: RefnoEnum) -> anyhow::Result<Vec<InstPointMap>> {
     let sql = format!(
-        "select in.id as refno,in.id->inst_relate.out.ptset[0]?:{{}} as ptset_map,in.noun as att_type from pe:{}<-pe_owner;",
+        "select in.id as refno,in.noun as att_type,{} from pe:{}<-pe_owner;",
+        ptset_map_projection("in.id"),
         refno.to_string()
     );
     let mut response = super::staging::data_db().query(&sql).await?;
-    match response.take(0) {
-        Ok(r) => Ok(r),
+    let rows: Vec<InstPointMapRow> = match response.take(0) {
+        Ok(rows) => rows,
         Err(e) => {
             dbg!(format!("sql 查询出错: {}", sql));
             dbg!(&e);
-            Ok(vec![])
+            return Ok(vec![]);
         }
-    }
+    };
+    rows.into_iter()
+        .map(|row| InstPointMap::try_from(row).map_err(anyhow::Error::from))
+        .collect()
 }
 
 #[tokio::test]
@@ -212,18 +241,19 @@ async fn test_query_bran_children_point_map() {
 /// 查询参考号对应的点集
 pub async fn query_point_map(refno: RefnoEnum) -> anyhow::Result<Option<InstPointMap>> {
     let sql = format!(
-        "select id as refno,id->inst_relate.out.ptset[0]?:{{}} as ptset_map,noun as att_type from {};",
+        "select id as refno,noun as att_type,{} from {};",
+        ptset_map_projection("id"),
         refno.to_pe_key()
     );
     let mut response = super::staging::data_db().query(&sql).await?;
-    let Ok(mut result) = response.take::<Vec<InstPointMap>>(0) else {
+    let Ok(mut result) = response.take::<Vec<InstPointMapRow>>(0) else {
         dbg!(format!("sql 查询出错: {}", sql));
         return Ok(None);
     };
     if result.is_empty() {
         return Ok(None);
     }
-    Ok(Some(result.remove(0)))
+    Ok(Some(InstPointMap::try_from(result.remove(0))?))
 }
 
 /// 查询多个参考号对应的点集
@@ -235,15 +265,21 @@ pub async fn query_refnos_point_map(
         .map(|refno| refno.to_pe_key())
         .collect::<Vec<_>>();
     let sql = format!(
-        "select id as refno,id->inst_relate.out.ptset[0]?:{{}} as ptset_map,noun as att_type from [{}];",
+        "select id as refno,noun as att_type,{} from [{}];",
+        ptset_map_projection("id"),
         refnos.join(",")
     );
     let mut response = super::staging::data_db().query(&sql).await?;
-    let Ok(result) = response.take::<Vec<InstPointMap>>(0) else {
+    let Ok(result) = response.take::<Vec<InstPointMapRow>>(0) else {
         dbg!(format!("sql 查询出错: {}", sql));
         return Ok(HashMap::default());
     };
-    Ok(result.into_iter().map(|r| (r.refno, r)).collect())
+    let mut point_maps = HashMap::default();
+    for row in result {
+        let map = InstPointMap::try_from(row)?;
+        point_maps.insert(map.refno, map);
+    }
+    Ok(point_maps)
 }
 
 ///通过geo hash 查询参考号

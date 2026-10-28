@@ -25,6 +25,8 @@ pub mod point;
 
 pub mod function;
 
+pub mod model_storage;
+
 pub mod version;
 
 pub mod e3d_db;
