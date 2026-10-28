@@ -299,7 +299,7 @@ impl AiosDBMgr {
         let url = &format!("{connection_str}/{}", GLOBAL_DATABASE);
         PoolOptions::new()
             .max_connections(500)
-            .acquire_timeout(Duration::from_secs(10 * 60))
+            .acquire_timeout(PUHUA_POOL_ACQUIRE_TIMEOUT)
             .connect(url)
             .await
             .map_err({ |x| anyhow::anyhow!(x.to_string()) })
@@ -313,7 +313,7 @@ impl AiosDBMgr {
         let url = &format!("{connection_str}/{}", db_option.project_name);
         PoolOptions::new()
             .max_connections(500)
-            .acquire_timeout(Duration::from_secs(10 * 60))
+            .acquire_timeout(PUHUA_POOL_ACQUIRE_TIMEOUT)
             .connect(url)
             .await
             .map_err({ |x| anyhow::anyhow!(x.to_string()) })
@@ -328,7 +328,7 @@ impl AiosDBMgr {
             let url = format!("{connection_str}/{}", project);
             let pool: Pool<MySql> = PoolOptions::new()
                 .max_connections(500)
-                .acquire_timeout(Duration::from_secs(10 * 60))
+                .acquire_timeout(PUHUA_POOL_ACQUIRE_TIMEOUT)
                 .connect(&url)
                 .await
                 .map_err({ |x| anyhow::anyhow!(x.to_string()) })?;
@@ -338,15 +338,47 @@ impl AiosDBMgr {
     }
 
     /// 获取外部的数据库
+    ///
+    /// # `acquire_timeout` 为什么是 10 秒而不是 10 分钟
+    ///
+    /// 这个值约束的是「从池里取连接最多等多久」。`PoolOptions::connect()` 在返回前
+    /// 会先建立并验证一条连接，因此 MySQL 不可达时，等待时间就等于这个超时。
+    ///
+    /// 原值 10 分钟让 `rs-server` 启动时被 MySQL 拖死：`main.rs` 里
+    /// `get_puhua_pool().await.ok()` 看起来是「失败降级为 None」，实际会挂满十分钟，
+    /// 期间 9099 端口不 bind，对外表现成「服务起不来」。实测 68 个线程全部 Wait、
+    /// CPU 仅 0.58s。
+    ///
+    /// 保留 `.connect(url)` 而不是换成 `connect_lazy()`：`connect_lazy` 会把
+    /// 「`Ok` 即代表库可达」改成「`Ok` 但首次 acquire 才报错」，而
+    /// `rs-server/src/datacenter/gy.rs:160`、`tf.rs:187` 等调用点依赖前者语义，
+    /// 那些 `let-else` 的错误提示会因此失效。
+    ///
+    /// 影响面：`rs-server` 全部 9 个调用点，以及 `gen-model`（同一份 vendored
+    /// aios_core）。两者都需编译验证。
     #[cfg(feature = "sql")]
     pub async fn get_puhua_pool(&self) -> anyhow::Result<Pool<MySql>> {
         let conn = self.puhua_conn_str();
         let url = &format!("{conn}/{}", PUHUA_MATERIAL_DATABASE);
         PoolOptions::new()
             .max_connections(500)
-            .acquire_timeout(Duration::from_secs(10 * 60))
+            .acquire_timeout(PUHUA_POOL_ACQUIRE_TIMEOUT)
             .connect(url)
             .await
             .map_err({ |x| anyhow::anyhow!(x.to_string()) })
     }
 }
+
+/// 从普华（MySQL）连接池取连接的等待上限。
+///
+/// 适用于本类型里**所有**建池方法：`get_puhua_pool`、`get_global_pool`、
+/// `get_project_pool`、`get_project_pools`。
+///
+/// 内网正常取连接在毫秒级，10 秒足以容纳一次慢握手；同时它把「MySQL 不可达」
+/// 对调用方的阻塞从 10 分钟压到 10 秒。详见 `get_puhua_pool` 的说明。
+///
+/// 为什么统一而不是逐个调：这些方法都会被 HTTP handler 在请求路径上调用。
+/// 原值 10 分钟意味着 MySQL 一挂，对应接口就挂满十分钟才返回——实测
+/// `/get_project_ips`（走 `get_global_pool`）在 MySQL 不可达时 15 秒超时仍未返回。
+#[cfg(feature = "sql")]
+const PUHUA_POOL_ACQUIRE_TIMEOUT: Duration = Duration::from_secs(10);
