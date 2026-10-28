@@ -195,14 +195,18 @@ pub async fn query_refnos_has_pos_neg_map(
 ///
 /// `$pe` 是一个指向 `pe` 记录的表达式（`id` 或 `in.id`）。三段投影：
 ///
-/// 1. `dbnum`——库号，用来定位水位行；
-/// 2. `dbnum_storage_version`——`dbnum_watermark:{dbnum}.model_storage_version`，缺列即老库；
-/// 3. `ptset_row`——`pe_ptset:{pe}` 整行（版本 + 点集），没有行时为 none。
+/// 1. `dbnum`——库号，用来拼重建命令、定位日志；
+/// 2. `storage_version`——`storage_version:current.version`，整库一条记录，缺记录即老库；
+/// 3. `ptset_row`——`pe_ptset:{pe}` 整行（点集），没有行时为 none。
+///
+/// 版本只有这一处来源：它回答「这份库的模型面是哪一版代码建的」，
+/// 不是某张表、也不是某个 dbnum 的属性，所以每一行带出来的都是同一格。
 fn ptset_map_projection(pe: &str) -> String {
     format!(
         "{pe}.dbnum as dbnum, \
-         type::thing('dbnum_watermark', {pe}.dbnum).model_storage_version as dbnum_storage_version, \
-         (select storage_version, ptset from only type::thing('pe_ptset', record::id({pe}))) as ptset_row"
+         (select value version from only {}) as storage_version, \
+         (select ptset from only type::thing('pe_ptset', record::id({pe}))) as ptset_row",
+        crate::model_storage::STORAGE_VERSION_RECORD
     )
 }
 
