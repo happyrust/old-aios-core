@@ -133,7 +133,22 @@ sqlx = { version = "0.7.4", default-features = false, features = [
     "rust_decimal",
     "mysql",
 ] }
-duckdb = { version = "1.2.2" }
+# duckdb 已移除（2026-10-28）。
+#
+# 它原本写在这里作为**正式依赖**，但唯一的使用点是
+# `src/test/test_different_dbs/test_duckdb.rs`，而那个文件 468 行**全部是注释**
+# （`use duckdb::{...}` 也在注释里），零可编译代码。
+#
+# 代价却是实打实的：`duckdb` 会拖进 `libduckdb-sys`，后者的 build script 默认
+# **下载并编译一份 DuckDB C 源码**，在没有外网的机器上直接失败：
+#   Failed to set up libduckdb: timeout: global
+# 下游 rs-server / gen-model 因此被迫手工设 `DUCKDB_LIB_DIR` 与
+# `DUCKDB_INCLUDE_DIR` 指向预先下好的二进制包，否则整个 workspace 编不过。
+#
+# 将来若真要恢复那套 SurrealDB → DuckDB 的基准对比，请把依赖加到
+# `[dev-dependencies]` 并同时恢复 `test_different_dbs/mod.rs` 里的模块声明，
+# 不要放回正式依赖——那会让所有下游二进制都背上一个 C 数据库引擎。
+# duckdb = { version = "1.2.2" }
 
 [dev-dependencies]
 surrealdb = { git = "https://gitee.com/happydpc/surrealdb", default-features = false, features = ["kv-mem"] }
