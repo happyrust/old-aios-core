@@ -21,3 +21,7 @@ Cargo.lock
 DbOption.toml
 .vscode
 .idea/workspace.xml
+
+# 运行时错误日志（`init_query_error` 等写出的现场文件），不属于源码
+error.log
+*.log
