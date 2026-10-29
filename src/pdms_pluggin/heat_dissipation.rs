@@ -23,8 +23,8 @@ pub struct InstPointMap {
 /// `{ pt, dir, bore, noun }`，点号只在键上，`bore` 求不出为 none。
 ///
 /// 旧的 `inst_info.ptset` / `inst_relate.out.ptset` 形状已随 legacy 兜底一起退役，
-/// 这里不再认 `number` / `pbore` 这些只有老行才有的字段：老库靠
-/// [`crate::model_storage::check_dbnum`] 在更外层就被拦下，不会走到反序列化。
+/// 这里不再认 `number` / `pbore` 这些只有老行才有的字段：数据库架构版本只在
+/// 进程启动时全局核对，读点集不做版本判断，没有行就是空集。
 ///
 /// 消费方（rs-server 的 dq_bran / query / heat_dissipation）按 `.pt` / `.pbore` 取值，
 /// 由 [`Self::into_cate_axis_param`] 归一成 [`CateAxisParam`]，调用代码不感知。
@@ -60,24 +60,14 @@ impl PtsetPointRow {
     }
 }
 
-/// `select … as ptset_row / storage_version_row` 直接落下来的原始行。
+/// `select … as ptset_row` 直接落下来的原始行。
 ///
-/// 版本核对在 [`TryFrom`] 里做，所以任何拿到 [`InstPointMap`] 的调用方都可以确信
-/// 这份点集是当前存储架构版本写的。
+/// 读点集**不做版本判断**：版本只在进程启动时全局核对一次。没有行就是空集，
+/// 那是「这根还没按新版发布过 / 这件真没有 P 点」的正常状态。
 #[derive(Serialize, Deserialize, Clone, Debug, Default)]
 pub struct InstPointMapRow {
     pub refno: RefnoEnum,
     pub att_type: String,
-    /// `pe.dbnum`——库里的权威库号（`resource/surreal/common.surql:12` 的 `pe_dbnum_noun` 索引）。
-    ///
-    /// 不从 `refno` 解析前缀：record id 的形制会随版本变，库号字段不会。
-    #[serde(default)]
-    pub dbnum: u32,
-    /// `storage_version:current.version` 那一格；`None` = 库里没有这条记录 = 老库。
-    ///
-    /// 版本是整库一条记录，不是逐库、也不是逐行的，所以这一格对每一行都一样。
-    #[serde(default)]
-    pub storage_version: Option<u32>,
     /// `pe_ptset:{pe}` 那一行；`None` = 这根还没按新版发布过。
     #[serde(default)]
     pub ptset_row: Option<PePtsetRow>,
@@ -90,16 +80,9 @@ pub struct PePtsetRow {
     pub ptset: BTreeMap<String, PtsetPointRow>,
 }
 
-impl TryFrom<InstPointMapRow> for InstPointMap {
-    type Error = crate::model_storage::ModelStorageVersionMismatch;
-
-    /// 版本核对的唯一入口。
-    ///
-    /// - 库里没有 `storage_version:current` 记录 → `Err`，`source = Missing`（前版本化）；
-    /// - 记录里的 `version` 不是本进程读得懂的 → `Err`，`source = Version`；
-    /// - 版本对得上但没有行 → `Ok`，空 map（这根还没发布过 / 这件真没有 P 点）。
-    fn try_from(row: InstPointMapRow) -> Result<Self, Self::Error> {
-        crate::model_storage::check(row.dbnum, row.storage_version)?;
+impl From<InstPointMapRow> for InstPointMap {
+    /// 只做形状搬运，不做版本判断。没有 `pe_ptset` 行 → 空 map。
+    fn from(row: InstPointMapRow) -> Self {
         let ptset_map = match row.ptset_row {
             None => BTreeMap::new(),
             Some(pe_ptset_row) => pe_ptset_row
@@ -111,11 +94,11 @@ impl TryFrom<InstPointMapRow> for InstPointMap {
                 })
                 .collect(),
         };
-        Ok(Self {
+        Self {
             refno: row.refno,
             att_type: row.att_type,
             ptset_map,
-        })
+        }
     }
 }
 
@@ -124,13 +107,11 @@ fn ptset_row_reads_the_current_shape() {
     let shape = r#"{
         "refno": "pe:24381_101407",
         "att_type": "ELBO",
-        "dbnum": 7997,
-        "storage_version": 1,
         "ptset_row": { "ptset": { "1": { "pt": [1.0, 2.0, 3.0], "dir": [0.0, 0.0, 1.0], "bore": 100.0, "noun": "PTAX" },
                                   "2": { "pt": [4.0, 5.0, 6.0], "dir": [0.0, 1.0, 0.0], "bore": null, "noun": "PTAX" } } }
     }"#;
     let row = serde_json::from_str::<InstPointMapRow>(shape).unwrap();
-    let map = InstPointMap::try_from(row).unwrap();
+    let map = InstPointMap::from(row);
     assert_eq!(map.ptset_map.len(), 2);
     assert_eq!(map.ptset_map["1"].number, 1, "点号从键上补");
     assert_eq!(map.ptset_map["1"].pbore, 100.0);
@@ -140,45 +121,13 @@ fn ptset_row_reads_the_current_shape() {
 }
 
 #[test]
-fn a_store_without_the_version_record_is_refused() {
-    // 老库：没有 storage_version:current 这条记录，也没有 pe_ptset 行。
+fn no_row_is_an_empty_set_not_a_version_error() {
+    // 读点集不做版本判断：没有 pe_ptset 行 = 这根还没按新版发布过 / 这件真没有 P 点。
     let shape = r#"{
-        "refno": "pe:24381_101407", "att_type": "ELBO", "dbnum": 7997,
-        "storage_version": null, "ptset_row": null
+        "refno": "pe:24381_101407", "att_type": "ELBO", "ptset_row": null
     }"#;
     let row = serde_json::from_str::<InstPointMapRow>(shape).unwrap();
-    let error = InstPointMap::try_from(row).unwrap_err();
-    assert_eq!(error.dbnum, 7997);
-    assert_eq!(error.stored, None);
-    assert_eq!(error.source, crate::model_storage::MismatchSource::Missing);
-    assert!(
-        error.to_string().contains("model/rebuild"),
-        "要告诉调用方怎么修: {error}"
-    );
-}
-
-#[test]
-fn a_record_from_another_version_is_refused() {
-    let shape = r#"{
-        "refno": "pe:24381_101407", "att_type": "ELBO", "dbnum": 7997,
-        "storage_version": 2,
-        "ptset_row": { "ptset": {} }
-    }"#;
-    let row = serde_json::from_str::<InstPointMapRow>(shape).unwrap();
-    let error = InstPointMap::try_from(row).unwrap_err();
-    assert_eq!(error.source, crate::model_storage::MismatchSource::Version);
-    assert_eq!(error.stored, Some(2));
-}
-
-#[test]
-fn a_missing_row_on_a_current_store_is_an_empty_set_not_an_error() {
-    // 版本对得上但没有 pe_ptset 行 = 这根还没按新版发布过 / 这件真没有 P 点。
-    let shape = r#"{
-        "refno": "pe:24381_101407", "att_type": "ELBO", "dbnum": 7997,
-        "storage_version": 1, "ptset_row": null
-    }"#;
-    let row = serde_json::from_str::<InstPointMapRow>(shape).unwrap();
-    let map = InstPointMap::try_from(row).unwrap();
+    let map = InstPointMap::from(row);
     assert!(map.ptset_map.is_empty());
 }
 

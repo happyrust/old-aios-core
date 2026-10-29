@@ -1,12 +1,11 @@
-//! 模型存储架构版本号。
+//! 数据库架构版本号。
 //!
 //! ## 为什么要这个号
 //!
-//! 模型面（`pe` / `inst_relate` / `pe_ptset` / `dbnum_watermark` …）的行形状会随版本演进：
-//! 字段增删、键的语义变化、坐标单位或参考系变化。读侧如果按新形状去读一份老库，
+//! 整个数据库的模型面（`pe` / `inst_relate` / `pe_ptset` / `dbnum_watermark` …）行形状会随
+//! 版本演进：字段增删、键的语义变化、坐标单位或参考系变化。读侧如果按新形状去读一份老库，
 //! 得到的是「查不到」「空集」「0.0」这类静默错误——比报错难查得多。
-//! 这个号的作用只有一个：**让读侧能判断一份库的行形状自己读不读得懂**，读不懂就报错，
-//! 由人决定何时重建，而不是拿空集冒充「这件没有点」。
+//! 这个号回答的只有一句：**当前进程读不读得懂这份数据库的架构**。
 //!
 //! ## 落在哪：整库一条记录
 //!
@@ -14,28 +13,28 @@
 //!
 //! ```text
 //! storage_version:current = {
-//!     version: 1,          // 行形状版本，与 MODEL_STORAGE_VERSION 同值
-//!     shape:   "…",        // 这一版的行形状说明（人读）
+//!     version: 1,          // 数据库架构版本，与 MODEL_STORAGE_VERSION 同值
+//!     shape:   "…",        // 这一版的架构说明（人读）
 //!     rebuild: "…",        // 改版本号之后必须做的事（人读）
 //! }
 //! ```
 //!
-//! 行形状是整个模型面共用的一份约定，不是某张表、也不是某个 dbnum 的属性：
-//! 同一份代码写出来的行不会有第二种形状。所以只有这一条记录，没有逐库、也没有逐行的副本。
-//! 重建的单位仍然是 dbnum（`POST /api/v1/dbnums/{dbnum}/model/rebuild`），
-//! 但「重建完没有」不靠另一处版本号回答——重建会重写这个库的全部模型行，
-//! 逐库进度看的是水位（`dbnum_watermark.model_sesno`），不是版本。
+//! 这是整个数据库共用的一份约定，不是某张表、也不是某个 dbnum 的属性：
+//! 同一份代码写出来的库不会有第二种架构。所以只有这一条记录，没有逐库、也没有逐行的副本。
+//! 版本只在进程启动时全局核对一次，运行期不对任何表、任何查询做版本判断。
+//! 不匹配的出路是 aios-database 的升级入口
+//! （`POST /api/v1/storage-version/upgrade`），不是逐库 `model/rebuild`。
 //!
 //! ## 三条正交的版本轴（不要混用）
 //!
 //! | 轴 | 常量 / 字段 | 回答的问题 | 定义位置 |
 //! |---|---|---|---|
-//! | 存储架构版本 | [`MODEL_STORAGE_VERSION`]，落在 [`STORAGE_VERSION_RECORD`]`.version` | 行形状**能不能读** | 本文件 |
+//! | 数据库架构版本 | [`MODEL_STORAGE_VERSION`]，落在 [`STORAGE_VERSION_RECORD`]`.version` | 架构**能不能读** | 本文件 |
 //! | 点集求值版本 | `e3d_model::PTSET_EVAL_VERSION`，落在 `pe_ptset.generator` | 点**算得对不对** | `vendor/e3d-model/src/catalogue_point.rs` |
 //! | 几何生成器指纹 | `dbnum_watermark:{dbnum}.model_generator` | 哪一版 e3d-model **算的几何** | `gen-model/src/data_interface/task_end.rs` |
 //!
 //! 求值规则变了（比如弯头弧长公式改）→ 只动 `PTSET_EVAL_VERSION`，本常量不动，
-//! 因为老行照样读得懂、只是数值要重算。行形状变了 → 只动本常量。
+//! 因为老行照样读得懂、只是数值要重算。架构变了 → 只动本常量。
 //!
 //! ## 何时加一
 //!
@@ -81,7 +80,7 @@ pub const REBUILD_COLUMN: &str = "rebuild";
 /// 写清读侧真正依赖的那几格：字段名、类型、坐标单位与参考系。
 /// 版本加一时这段跟着改写，别让它和代码分叉。
 pub const SHAPE_NOTE: &str = "\
-模型面行形状 v1。\
+数据库架构 v1。\
 pe_ptset:{pe} = { pe, root, dbnum, noun, \
 ptset: { \"<P 号>\": { pt: [x,y,z], dir: [x,y,z], bore, noun } }, \
 count, unresolved: [{ number, reason }], sesno, generator, reason, written_at }。\
@@ -90,9 +89,9 @@ count, unresolved: [{ number, reason }], sesno, generator, reason, written_at }�
 
 /// 改版本号之后必须做的事，随版本记录一起落库（人读，不参与任何判断）。
 pub const REBUILD_NOTE: &str = "\
-行形状变了，老库的模型行读不懂。逐库重建：\
-POST /api/v1/dbnums/{dbnum}/model/rebuild（低峰、串行，每库重建期间该库不可见）。\
-重建前老库的 P 点长度函数会报 MODEL_STORAGE_VERSION_MISMATCH，不再静默回 0。";
+数据库架构变了，老数据读不懂。请用 aios-database 升级数据库：\
+POST /api/v1/storage-version/upgrade（默认全部设计库，逐库清空、重新解析、重新生成模型）。\
+升级完成前 rs-server 会拒绝启动；运行期不再做任何版本判断。";
 
 /// 版本不匹配属于哪一种。
 ///
@@ -115,15 +114,12 @@ impl MismatchSource {
     }
 }
 
-/// 存储架构版本不匹配。
+/// 数据库架构版本不匹配。
 ///
-/// `Display` 的文本是稳定契约：rs-server 的 HTTP 层、`fn::pe_ptset_of` 的
-/// SurrealQL `THROW`、日志巡检都按同一个码 `MODEL_STORAGE_VERSION_MISMATCH` 认。
-/// 改文本会同时打断这三处，不要改。
+/// `Display` 的文本是稳定契约：rs-server 启动核对、日志巡检都按同一个码
+/// `MODEL_STORAGE_VERSION_MISMATCH` 认。改文本会同时打断这些地方，不要改。
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct ModelStorageVersionMismatch {
-    /// 出问题的库号（记录是整库一条，库号只用来拼重建命令与定位日志）。
-    pub dbnum: u32,
     /// 记录里的 `version`；`None` = 没有这条记录 = 前版本化。
     pub stored: Option<u32>,
     /// 本进程期望的版本。
@@ -140,13 +136,11 @@ impl std::fmt::Display for ModelStorageVersionMismatch {
         };
         write!(
             formatter,
-            "{} dbnum={} stored={} expected={} source={}: 该库需 POST /api/v1/dbnums/{}/model/rebuild",
+            "{} stored={} expected={} source={}: 请用 aios-database 升级数据库（运维面板或 POST /api/v1/storage-version/upgrade）",
             Self::CODE,
-            self.dbnum,
             stored,
             self.expected,
-            self.source.as_str(),
-            self.dbnum
+            self.source.as_str()
         )
     }
 }
@@ -157,31 +151,28 @@ impl ModelStorageVersionMismatch {
     /// 错误码。调用方按它分流，不要匹配 Display 全文。
     pub const CODE: &'static str = "MODEL_STORAGE_VERSION_MISMATCH";
 
-    /// 可以直接发给运维的重建命令。
+    /// 可以直接发给运维的升级入口。
     pub fn rebuild_hint(&self) -> String {
-        format!("POST /api/v1/dbnums/{}/model/rebuild", self.dbnum)
+        "POST /api/v1/storage-version/upgrade".to_string()
     }
 
     /// 这个错误文本里是否带本错误码。
-    ///
-    /// 给「错误从 SurrealQL `THROW` 里以字符串形式回来」那条路径用。
     pub fn matches_code(text: &str) -> bool {
         text.contains(Self::CODE)
     }
 }
 
-/// 核对库里的存储架构版本。
+/// 核对库里的数据库架构版本。
 ///
 /// `stored` 传 `None` 表示库里没有 [`STORAGE_VERSION_RECORD`] 这条记录（老库）。
-/// `dbnum` 只用于错误文本与重建命令。
-pub fn check(dbnum: u32, stored: Option<u32>) -> Result<(), ModelStorageVersionMismatch> {
+/// 只在进程启动时调用；运行期读表、读点集都不再做这个判断。
+pub fn check(stored: Option<u32>) -> Result<(), ModelStorageVersionMismatch> {
     let source = match stored {
         None => MismatchSource::Missing,
         Some(version) if version != MODEL_STORAGE_VERSION => MismatchSource::Version,
         Some(_) => return Ok(()),
     };
     Err(ModelStorageVersionMismatch {
-        dbnum,
         stored,
         expected: MODEL_STORAGE_VERSION,
         source,
@@ -222,19 +213,19 @@ mod tests {
 
     #[test]
     fn a_missing_record_is_legacy_and_only_the_exact_version_reads() {
-        assert!(check(7997, Some(MODEL_STORAGE_VERSION)).is_ok());
+        assert!(check(Some(MODEL_STORAGE_VERSION)).is_ok());
         assert_eq!(
-            check(7997, None).unwrap_err().source,
+            check(None).unwrap_err().source,
             MismatchSource::Missing,
             "缺记录 = 老库"
         );
         assert_eq!(
-            check(7997, Some(0)).unwrap_err().source,
+            check(Some(0)).unwrap_err().source,
             MismatchSource::Version,
             "0 不是合法版本"
         );
         assert_eq!(
-            check(7997, Some(MODEL_STORAGE_VERSION + 1))
+            check(Some(MODEL_STORAGE_VERSION + 1))
                 .unwrap_err()
                 .source,
             MismatchSource::Version,
@@ -244,28 +235,31 @@ mod tests {
 
     #[test]
     fn mismatch_text_is_a_stable_contract() {
-        let error = check(7997, None).unwrap_err();
+        let error = check(None).unwrap_err();
         let text = error.to_string();
         assert!(text.contains("MODEL_STORAGE_VERSION_MISMATCH"), "{text}");
-        assert!(text.contains("dbnum=7997"), "{text}");
         assert!(text.contains("stored=none"), "{text}");
         assert!(text.contains("expected=1"), "{text}");
         assert!(text.contains("source=missing"), "{text}");
         assert!(
-            text.contains("POST /api/v1/dbnums/7997/model/rebuild"),
+            text.contains("POST /api/v1/storage-version/upgrade"),
+            "{text}"
+        );
+        assert!(
+            text.contains("请用 aios-database 升级数据库"),
             "{text}"
         );
         assert_eq!(
             error.rebuild_hint(),
-            "POST /api/v1/dbnums/7997/model/rebuild"
+            "POST /api/v1/storage-version/upgrade"
         );
         assert!(ModelStorageVersionMismatch::matches_code(&text));
     }
 
     #[test]
     fn a_version_mismatch_reads_differently_from_a_missing_record() {
-        let missing = check(7997, None).unwrap_err();
-        let version = check(7997, Some(MODEL_STORAGE_VERSION + 1)).unwrap_err();
+        let missing = check(None).unwrap_err();
+        let version = check(Some(MODEL_STORAGE_VERSION + 1)).unwrap_err();
         assert!(version.to_string().contains("source=version"), "{version}");
         assert_ne!(missing.to_string(), version.to_string());
     }
@@ -277,8 +271,8 @@ mod tests {
         assert!(!record.shape.is_empty(), "形状说明不能空");
         assert!(!record.rebuild.is_empty(), "重建要求不能空");
         assert!(
-            record.rebuild.contains("/model/rebuild"),
-            "重建要求要能照抄: {}",
+            record.rebuild.contains("/storage-version/upgrade"),
+            "升级要求要能照抄: {}",
             record.rebuild
         );
         assert!(

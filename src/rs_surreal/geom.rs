@@ -189,31 +189,18 @@ pub async fn query_refnos_has_pos_neg_map(
 /// `pe_ptset` 是唯一权威：gen-model 在发布事务里按 `pe` 同键写的分表，
 /// 行形状见 gen-model `docs/plans/2026-10-26-ptset-split-table-plan.md` §3。
 ///
-/// **不再有 legacy 兜底**。旧的 `->inst_relate.out.ptset[0]` 读法已删除：
-/// 老库的行形状读不懂，静默回空集会被误当成「这件没有点」，
-/// 所以改成在同一条 SQL 里带出存储架构版本，由 [`InstPointMap::try_from`] 判错。
+/// **不再有 legacy 兜底**。旧的 `->inst_relate.out.ptset[0]` 读法已删除。
+/// 读点集不做版本判断：版本只在进程启动时全局核对一次；没有行就是 NONE / 空集。
 ///
-/// `$pe` 是一个指向 `pe` 记录的表达式（`id` 或 `in.id`）。三段投影：
-///
-/// 1. `dbnum`——库号，用来拼重建命令、定位日志；
-/// 2. `storage_version`——`storage_version:current.version`，整库一条记录，缺记录即老库；
-/// 3. `ptset_row`——`pe_ptset:{pe}` 整行（点集），没有行时为 none。
-///
-/// 版本只有这一处来源：它回答「这份库的模型面是哪一版代码建的」，
-/// 不是某张表、也不是某个 dbnum 的属性，所以每一行带出来的都是同一格。
+/// `$pe` 是一个指向 `pe` 记录的表达式（`id` 或 `in.id`），投影只有一格：
+/// `ptset_row`——`pe_ptset:{pe}` 整行（点集），没有行时为 none。
 fn ptset_map_projection(pe: &str) -> String {
     format!(
-        "{pe}.dbnum as dbnum, \
-         (select value version from only {}) as storage_version, \
-         (select ptset from only type::thing('pe_ptset', record::id({pe}))) as ptset_row",
-        crate::model_storage::STORAGE_VERSION_RECORD
+        "(select ptset from only type::thing('pe_ptset', record::id({pe}))) as ptset_row"
     )
 }
 
 /// 查询bran下所有元件的点集
-///
-/// 库的存储架构版本对不上时返回 `Err(ModelStorageVersionMismatch)`，
-/// 不再静默回空 `Vec`：调用方必须能区分「没有点」和「这个库要重建」。
 pub async fn query_bran_children_point_map(refno: RefnoEnum) -> anyhow::Result<Vec<InstPointMap>> {
     let sql = format!(
         "select in.id as refno,in.noun as att_type,{} from pe:{}<-pe_owner;",
@@ -229,9 +216,7 @@ pub async fn query_bran_children_point_map(refno: RefnoEnum) -> anyhow::Result<V
             return Ok(vec![]);
         }
     };
-    rows.into_iter()
-        .map(|row| InstPointMap::try_from(row).map_err(anyhow::Error::from))
-        .collect()
+    Ok(rows.into_iter().map(InstPointMap::from).collect())
 }
 
 #[tokio::test]
@@ -257,7 +242,7 @@ pub async fn query_point_map(refno: RefnoEnum) -> anyhow::Result<Option<InstPoin
     if result.is_empty() {
         return Ok(None);
     }
-    Ok(Some(InstPointMap::try_from(result.remove(0))?))
+    Ok(Some(InstPointMap::from(result.remove(0))))
 }
 
 /// 查询多个参考号对应的点集
@@ -280,7 +265,7 @@ pub async fn query_refnos_point_map(
     };
     let mut point_maps = HashMap::default();
     for row in result {
-        let map = InstPointMap::try_from(row)?;
+        let map = InstPointMap::from(row);
         point_maps.insert(map.refno, map);
     }
     Ok(point_maps)
