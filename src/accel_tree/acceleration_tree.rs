@@ -117,7 +117,14 @@ pub struct QueryRay {
     pub toi: f32,
     pub solid: bool,
     pub min_dist: Cell<f32>,
-    pub min_refnos: HashSet<RefnoEnum>,
+    /// `should_unpack_leaf` 只拿得到 `&self`，收集结果必须走内部可变性。
+    ///
+    /// 这里曾经写成 `HashSet`，而填充那两行用的是 `borrow_mut()`——那是对
+    /// `RefCell` 的写法，套在 `HashSet` 上编译不过，于是整段被注释掉，
+    /// `min_refnos` 从此恒为空。`query_nearest_by_ray` 开头的
+    /// `if refnos.is_empty() { return Ok(None) }` 因此每次都命中，
+    /// **射线查询永远返回 None**——树搜索和几何求交都正常，只是结果没被存下来。
+    pub min_refnos: RefCell<HashSet<RefnoEnum>>,
 }
 
 impl QueryRay {
@@ -128,7 +135,7 @@ impl QueryRay {
             toi: 10_0000.0,
             // found: Cell::new(false),
             min_dist: Cell::new(f32::MAX),
-            min_refnos: HashSet::default(),
+            min_refnos: RefCell::new(HashSet::default()),
             solid,
         }
     }
@@ -163,13 +170,11 @@ impl rstar::SelectionFunction<RStarBoundingBox> for &QueryRay {
             {
                 self.min_dist.set(ray_inter.time_of_impact);
 
-                //找到更近的，清空之前的
-                // if abs_diff_ne!(ray_inter.time_of_impact, self.toi) {
-                //     self.min_refnos.borrow_mut().clear()
-                // }
-                // self.min_refnos.borrow_mut().insert(bbox.refno.into());
-                // println!("found: {}", bbox.refno);
-                // dbg!(ray_inter.toi);
+                // 找到更近的就清空之前那批——`min_refnos` 的语义是「当前最近距离上的
+                // 候选集」，留着更远的会让后面的三角求交拿一堆无关 refno 去读 mesh。
+                let mut min_refnos = self.min_refnos.borrow_mut();
+                min_refnos.clear();
+                min_refnos.insert(bbox.refno.into());
                 return true;
             }
         }
@@ -433,7 +438,8 @@ impl AccelerationTree {
             .tree
             .locate_with_selection_function(&ray)
             .collect::<Vec<_>>();
-        let refnos = &ray.min_refnos;
+        // 借出来一份快照再放开：下面 `get_tri_mesh` 是 async，不能跨 await 持着借用。
+        let refnos: Vec<RefnoEnum> = ray.min_refnos.borrow().iter().copied().collect();
         if refnos.is_empty() {
             return Ok(None);
         }
