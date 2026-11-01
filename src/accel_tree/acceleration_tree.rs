@@ -266,6 +266,7 @@ impl AccelerationTree {
             }
             self.ids.remove(refno);
         }
+        self.evict_meshes(&refnos);
         for bbox in bboxes {
             self.ids.insert(bbox.refno);
             self.tree.insert(bbox.clone());
@@ -309,8 +310,24 @@ impl AccelerationTree {
             }
             self.ids.remove(refno);
         }
+        self.evict_meshes(refnos);
         self.indexed_tree_len = self.tree.size();
         removed
+    }
+
+    /// 摘掉这些 refno 的世界坐标网格缓存。
+    ///
+    /// `mesh_cache` 按 refno 缓存 [`Self::get_tri_mesh`] 读出的网格。增量刷新空间树只走
+    /// [`Self::sync_refnos`] / [`Self::remove_by_refnos`]，这两处以前不清缓存：进程里重生成过
+    /// 的构件（楼板被改），射线就一直打在旧网格上，增量重算的最近楼板仍是旧结果。
+    ///
+    /// 缓存键是 `RefnoEnum`（可能带会话号），树只认 `RefU64`，所以按 `.refno()` 匹配全部变体。
+    fn evict_meshes(&self, refnos: &HashSet<RefU64>) {
+        if refnos.is_empty() || self.mesh_cache.is_empty() {
+            return;
+        }
+        self.mesh_cache
+            .retain(|key, _| !refnos.contains(&key.refno()));
     }
 
     /// 某个 refno 在树上的全部条目：正常恰好一条，历史堆叠的残留可能多条，没有则空。
@@ -413,30 +430,43 @@ impl AccelerationTree {
         if let Some(r) = self.mesh_cache.get(&refno) {
             return Some(r);
         }
-        let geom_insts = crate::query_insts(&[refno], true).await.ok()?;
-        // dbg!(geom_insts.len());
+        let geom_insts = match crate::query_insts(&[refno], true).await {
+            Ok(v) => v,
+            Err(error) => {
+                log::warn!("射线精筛：查询几何实例失败 refno={refno:?}: {error}");
+                return None;
+            }
+        };
         let mut meshes = vec![];
         for g in geom_insts {
-            // dbg!(&g);
             for inst in &g.insts {
-                let Ok(mesh) =
-                    PlantMesh::des_mesh_file(&format!("assets/meshes/{}.mesh", inst.geo_hash))
-                else {
-                    continue;
+                let path = format!("assets/meshes/{}.mesh", inst.geo_hash);
+                let mesh = match PlantMesh::des_mesh_file(&path) {
+                    Ok(mesh) => mesh,
+                    Err(error) => {
+                        log::warn!("射线精筛：网格文件读取失败 refno={refno:?} path={path}: {error}");
+                        continue;
+                    }
                 };
-                // dbg!(mesh.vertices.len());
                 if mesh.vertices.is_empty() {
+                    log::debug!("射线精筛：网格无顶点 refno={refno:?} path={path}");
                     continue;
                 }
                 let trans = g.world_trans * inst.transform;
                 let Some(tri_mesh) = mesh.get_tri_mesh(trans.compute_matrix()) else {
+                    log::warn!("射线精筛：三角网格构建失败（索引不足 3） refno={refno:?} path={path}");
                     continue;
                 };
                 meshes.push(tri_mesh);
             }
         }
+        // 空结果不进缓存：读失败 / 几何尚未落盘时缓存空列表，这个构件在本进程里
+        // 就再也不会被重试，射线永远打不中它。
+        if meshes.is_empty() {
+            return None;
+        }
         self.mesh_cache.insert(refno, meshes);
-        return self.mesh_cache.get(&refno);
+        self.mesh_cache.get(&refno)
     }
 
     /// Returns the refno of the nearest object to `query_point`
@@ -697,6 +727,45 @@ mod tests {
             !tree.ids.contains(&bbox(1, 0.0, 10.0).refno),
             "replace 之后旧 refno 不该还挂在 ids 里"
         );
+    }
+
+    // ---- 网格缓存失效 ----
+    //
+    // 增量刷新只走 sync_refnos / remove_by_refnos。它们不清 mesh_cache 时，进程里
+    // 重生成过的楼板，射线一直打在旧网格上。
+
+    fn cached(tree: &AccelerationTree, refno_seq: u64) -> bool {
+        let key: RefnoEnum = bbox(refno_seq, 0.0, 1.0).refno.into();
+        tree.mesh_cache.contains_key(&key)
+    }
+
+    fn fill_cache(tree: &AccelerationTree, refno_seq: u64) {
+        let key: RefnoEnum = bbox(refno_seq, 0.0, 1.0).refno.into();
+        tree.mesh_cache.insert(key, Vec::new());
+    }
+
+    #[test]
+    fn sync_refnos_evicts_the_mesh_cache_of_synced_refnos_only() {
+        let mut tree = AccelerationTree::load(vec![bbox(1, 0.0, 10.0), bbox(2, 20.0, 30.0)]);
+        fill_cache(&tree, 1);
+        fill_cache(&tree, 2);
+
+        tree.sync_refnos(vec![bbox(1, 100.0, 110.0)]);
+
+        assert!(!cached(&tree, 1), "同步过的 refno 必须丢掉旧网格，下次射线重新读");
+        assert!(cached(&tree, 2), "没同步的 refno 缓存不能被误清");
+    }
+
+    #[test]
+    fn remove_by_refnos_evicts_the_mesh_cache() {
+        let mut tree = AccelerationTree::load(vec![bbox(1, 0.0, 10.0), bbox(2, 20.0, 30.0)]);
+        fill_cache(&tree, 1);
+        fill_cache(&tree, 2);
+
+        tree.remove_by_refnos(&HashSet::from([bbox(1, 0.0, 10.0).refno]));
+
+        assert!(!cached(&tree, 1), "删掉的 refno 不能留着网格缓存");
+        assert!(cached(&tree, 2));
     }
 
     // ---- 射线候选收集 ----
