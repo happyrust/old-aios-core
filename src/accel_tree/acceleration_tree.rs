@@ -157,24 +157,35 @@ impl rstar::SelectionFunction<RStarBoundingBox> for &QueryRay {
     fn should_unpack_leaf(&self, bbox: &RStarBoundingBox) -> bool {
         use parry3d::{math::*, query::*};
         if !self.filter_nouns.is_empty() && self.filter_nouns.contains(&bbox.noun) {
-            //每次查找的距离应该比这个小，否则跳过
             let inter = bbox.aabb.cast_ray_and_get_normal(
                 &Isometry::identity(),
                 &self.ray,
                 self.toi,
                 self.solid,
             );
-            // dbg!(&inter);
-            if let Some(ray_inter) = inter
-                && ray_inter.time_of_impact <= self.min_dist.get()
-            {
-                self.min_dist.set(ray_inter.time_of_impact);
-
-                // 找到更近的就清空之前那批——`min_refnos` 的语义是「当前最近距离上的
-                // 候选集」，留着更远的会让后面的三角求交拿一堆无关 refno 去读 mesh。
-                let mut min_refnos = self.min_refnos.borrow_mut();
-                min_refnos.clear();
-                min_refnos.insert(bbox.refno.into());
+            // 2026-11-01 修：这里原来有 `&& ray_inter.time_of_impact <= self.min_dist.get()`
+            // 并用 `min_dist` 做「更近就替换」的裁剪，两处都是错的：
+            //
+            // 1. AABB 是外接盒，它的 `time_of_impact` 是真实网格 toi 的**下界**。
+            //    拿它当「最近」比较，会把 AABB 靠前但网格在该 (x,y) 处镂空的构件
+            //    判为赢家（楼板有孔洞、开口、异形轮廓都算）。
+            // 2. 裁剪条件让后续候选连进候选集的机会都没有。真库实测
+            //    （起点 (-9276.84, 10547.79, 1370) 向 -Z 打）：AABB 命中 8 个 FLOOR，
+            //    toi 依次 370 / 430 / 1390 / 1390 / 4570 / 4570 / 8870 / 8870。
+            //    toi=370 的 24381_39652（z=[940,1000]）网格没命中，而 toi=430 的
+            //    17496_98660（z=[-400,940]）才是真正该命中的那个——它被 370 剪掉了，
+            //    整条查询返回 None。往下 2000mm 重新打才命中，正是同一批里的候选。
+            //
+            // 语义改成「AABB 阶段命中的全部候选」，最近由 `query_nearest_by_ray`
+            // 的三角网格精筛决定。候选数量由 `toi` 上限控制，实测同一射线 8 个量级。
+            if let Some(ray_inter) = inter {
+                let toi = ray_inter.time_of_impact;
+                if toi < self.min_dist.get() {
+                    self.min_dist.set(toi);
+                }
+                self.min_refnos
+                    .borrow_mut()
+                    .insert(bbox.refno.into());
                 return true;
             }
         }
@@ -446,26 +457,28 @@ impl AccelerationTree {
         //检查是否真的和ray相交, 根据 profile 判断吗？
         //根据 param 判断是否相交吗？
         //直接检查是否在表面上即可
+        //
+        // 2026-11-01 修：候选集现在是「AABB 阶段命中的全部」，所以这里必须真的比出
+        // 最近的网格，不能遇到第一个命中的就返回——那等于又退回按遍历顺序取，而
+        // rstar 的遍历顺序不保证由近到远。
+        let mut best: Option<(RefnoEnum, f32)> = None;
         for &refno in refnos.iter() {
             let Some(tri_meshes) = self.get_tri_mesh(refno).await else {
                 continue;
             };
             for mesh in tri_meshes.value() {
-                let intersection_flag =
-                    match mesh.cast_local_ray_and_get_normal(&ray.ray, 10_0000.0, ray.solid) {
-                        // Some(intersection) => tri_mesh.is_backface(intersection.feature),
-                        Some(intersection) => {
-                            // dbg!(&intersection);
-                            true
-                        }
-                        None => false,
-                    };
-                if intersection_flag {
-                    return Ok(Some((refno, ray.min_dist.get())));
+                let Some(intersection) =
+                    mesh.cast_local_ray_and_get_normal(&ray.ray, 10_0000.0, ray.solid)
+                else {
+                    continue;
+                };
+                let toi = intersection.time_of_impact;
+                if best.is_none_or(|(_, d)| toi < d) {
+                    best = Some((refno, toi));
                 }
             }
         }
-        return Ok(None);
+        return Ok(best);
     }
 }
 
