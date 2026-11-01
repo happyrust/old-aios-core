@@ -474,6 +474,19 @@ impl AccelerationTree {
 
     /// Returns the refno of the nearest object to `query_point`
     /// 也可以检查墙等等，需要判断mesh
+    ///
+    /// 查询分两阶段：AABB 阶段把射线穿过的候选**全部**收进 `min_refnos`，不做
+    /// 距离裁剪；谁最近由下面的三角网格精筛逐个求交决定。AABB 的命中 toi 只是
+    /// 真实网格 toi 的下界（楼板在射线 (x,y) 处可能是孔洞），不能拿它在收集
+    /// 阶段排序取舍。`QueryRay` 上的 `min_dist` 只是诊断用的记录值，不参与任何
+    /// 拒绝判断；父节点要不要下钻用的是 `QueryRay::new` 定死的 `toi` 常量，不会
+    /// 被 `min_dist` 收窄——即不存在「先命中的 AABB 剪掉后来的候选」这条路径，
+    /// 不要再往收集阶段加距离裁剪。
+    ///
+    /// 由此，返回 `None` 的语义是「AABB 候选全部进了精筛但网格无一命中」，而非
+    /// 查询漏掉候选。真库 2026-11-02 实测：阀门 `pe:24381_177593` 正下方射线收进
+    /// 3 个楼板候选，492 / 696 个三角形无一命中（该 (x,y) 处网格全镂空），返回
+    /// `None` 是正确结果。
     pub async fn query_nearest_by_ray(
         &self,
         mut ray: QueryRay,
