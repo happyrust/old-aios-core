@@ -110,6 +110,9 @@ impl DerefMut for AccelerationTree {
     }
 }
 
+/// [`AccelerationTree::query_nearest_by_ray`] 打射线前把起点沿反方向退的距离（模型单位 mm）。
+pub const RAY_BACKOFF_MM: f32 = 1.0;
+
 pub struct QueryRay {
     pub ray: Ray,
     pub filter_nouns: HashSet<String>,
@@ -473,8 +476,22 @@ impl AccelerationTree {
     /// 也可以检查墙等等，需要判断mesh
     pub async fn query_nearest_by_ray(
         &self,
-        ray: QueryRay,
+        mut ray: QueryRay,
     ) -> anyhow::Result<Option<(RefnoEnum, f32)>> {
+        // 2026-11-01 修：起点先沿反方向退 `RAY_BACKOFF_MM` 再打，命中距离再减回去。
+        //
+        // 设备底面常常正好落在楼板面上，或者略微嵌进楼板（真库 `24381_102435`：底面
+        // z=-3320，正是楼板 `24381_38154` z=[-3320,-3200] 的底面）。起点贴在三角面上时
+        // parry 的射线求交不算命中；`solid=true` 也救不了——TriMesh 用默认 flag 建，判断
+        // 不了「起点在实体内」（探针实测 solid / 非 solid 结果处处相同）。退 1mm 后从面外
+        // 打进来就能命中，距离减回去后是 0（贴面）或真实间距。
+        let dir_len = ray.ray.dir.norm();
+        let backoff = if dir_len > 0.0 {
+            RAY_BACKOFF_MM / dir_len
+        } else {
+            0.0
+        };
+        ray.ray.origin -= ray.ray.dir * backoff;
         let _ = self
             .tree
             .locate_with_selection_function(&ray)
@@ -502,7 +519,8 @@ impl AccelerationTree {
                 else {
                     continue;
                 };
-                let toi = intersection.time_of_impact;
+                // 减回退出去的那一段；起点本来就在面后不到 1mm 时会略小于 0，按贴面算。
+                let toi = (intersection.time_of_impact - backoff).max(0.0);
                 if best.is_none_or(|(_, d)| toi < d) {
                     best = Some((refno, toi));
                 }
@@ -766,6 +784,51 @@ mod tests {
 
         assert!(!cached(&tree, 1), "删掉的 refno 不能留着网格缓存");
         assert!(cached(&tree, 2));
+    }
+
+    // ---- 射线起点贴面 ----
+
+    /// z=0 平面上一块 20x20 的方板（两片三角形），放进树和网格缓存，不碰库。
+    fn tree_with_plate_at_z0(refno_seq: u64, aabb_z: [f32; 2]) -> (AccelerationTree, RefnoEnum) {
+        let plate = bbox_at(
+            "FLOOR",
+            refno_seq,
+            [-10.0, -10.0, aabb_z[0]],
+            [10.0, 10.0, aabb_z[1]],
+        );
+        let key: RefnoEnum = plate.refno.into();
+        let tree = AccelerationTree::load(vec![plate]);
+        let p = |x: f32, y: f32| parry3d::math::Point::new(x, y, 0.0);
+        let mesh = TriMesh::with_flags(
+            vec![p(-10.0, -10.0), p(10.0, -10.0), p(10.0, 10.0), p(-10.0, 10.0)],
+            vec![[0, 1, 2], [0, 2, 3]],
+            TriMeshFlags::default(),
+        );
+        tree.mesh_cache.insert(key, vec![mesh]);
+        (tree, key)
+    }
+
+    /// 起点正好落在楼板面上（设备底面 = 楼板底面，真库 `24381_102435`）：退一点再打
+    /// 才命中，距离减回去是 0。
+    #[test]
+    fn ray_starting_on_a_floor_face_hits_with_zero_distance() {
+        let (tree, key) = tree_with_plate_at_z0(1, [0.0, 120.0]);
+        let hit = futures::executor::block_on(tree.query_nearest_by_ray(down_ray(0.0, 0.0, 0.0)))
+            .unwrap();
+        let (refno, dist) = hit.expect("起点贴面必须命中");
+        assert_eq!(refno, key);
+        assert!(dist.abs() < 1e-3, "贴面距离应为 0，实际 {dist}");
+    }
+
+    /// 起点离面有间距时，退出去的那段要减干净，距离不能多出 `RAY_BACKOFF_MM`。
+    #[test]
+    fn ray_backoff_is_subtracted_from_the_distance() {
+        let (tree, key) = tree_with_plate_at_z0(1, [-100.0, 0.0]);
+        let hit = futures::executor::block_on(tree.query_nearest_by_ray(down_ray(0.0, 0.0, 100.0)))
+            .unwrap();
+        let (refno, dist) = hit.expect("正下方 100 处有楼板");
+        assert_eq!(refno, key);
+        assert!((dist - 100.0).abs() < 1e-3, "距离应为 100，实际 {dist}");
     }
 
     // ---- 射线候选收集 ----
