@@ -508,6 +508,13 @@ impl AccelerationTree {
         // 2026-11-01 修：候选集现在是「AABB 阶段命中的全部」，所以这里必须真的比出
         // 最近的网格，不能遇到第一个命中的就返回——那等于又退回按遍历顺序取，而
         // rstar 的遍历顺序不保证由近到远。
+        //
+        // 2026-11-02 修：距离相等时按 refno 定序。`min_refnos` 是 `HashSet`，迭代顺序
+        // 逐次运行都不同；同 z 的多块楼板（同一层被切成的几块）距离常常恰好相等，
+        // 不定序时同一台设备两次重算会连到不同的楼板上（真库实测
+        // `24381_100725` 在 `24381_38695` 与 `24381_39170` 之间来回跳）。
+        let mut refnos = refnos;
+        refnos.sort_unstable();
         let mut best: Option<(RefnoEnum, f32)> = None;
         for &refno in refnos.iter() {
             let Some(tri_meshes) = self.get_tri_mesh(refno).await else {
@@ -521,7 +528,7 @@ impl AccelerationTree {
                 };
                 // 减回退出去的那一段；起点本来就在面后不到 1mm 时会略小于 0，按贴面算。
                 let toi = (intersection.time_of_impact - backoff).max(0.0);
-                if best.is_none_or(|(_, d)| toi < d) {
+                if best.is_none_or(|(winner, d)| toi < d || (toi == d && refno < winner)) {
                     best = Some((refno, toi));
                 }
             }
@@ -829,6 +836,39 @@ mod tests {
         let (refno, dist) = hit.expect("正下方 100 处有楼板");
         assert_eq!(refno, key);
         assert!((dist - 100.0).abs() < 1e-3, "距离应为 100，实际 {dist}");
+    }
+
+    /// 同距离的两块楼板必须稳定选 refno 小的那个：`min_refnos` 是 `HashSet`，迭代顺序
+    /// 逐次运行不同，不定序时同一台设备两次重算会连到不同的楼板上（真库实测
+    /// `24381_100725` 在 `24381_38695` 与 `24381_39170` 之间来回跳）。
+    #[test]
+    fn equidistant_floors_break_the_tie_by_refno() {
+        // 两块同 z、同 xy 的楼板：谁先进候选集取决于 HashSet 顺序。
+        let lower = bbox_at("FLOOR", 2, [-10.0, -10.0, -100.0], [10.0, 10.0, 0.0]);
+        let upper = bbox_at("FLOOR", 3, [-10.0, -10.0, -100.0], [10.0, 10.0, 0.0]);
+        let key_lower: RefnoEnum = lower.refno.into();
+        let key_upper: RefnoEnum = upper.refno.into();
+        let mut tree = AccelerationTree::load(vec![upper.clone(), lower.clone()]);
+        let p = |x: f32, y: f32| parry3d::math::Point::new(x, y, 0.0);
+        let mesh = TriMesh::with_flags(
+            vec![p(-10.0, -10.0), p(10.0, -10.0), p(10.0, 10.0), p(-10.0, 10.0)],
+            vec![[0, 1, 2], [0, 2, 3]],
+            TriMeshFlags::default(),
+        );
+        tree.mesh_cache.insert(key_lower, vec![mesh.clone()]);
+        tree.mesh_cache.insert(key_upper, vec![mesh]);
+
+        for _ in 0..8 {
+            let hit = futures::executor::block_on(
+                tree.query_nearest_by_ray(down_ray(0.0, 0.0, 100.0)),
+            )
+            .unwrap()
+            .expect("两块楼板都在正下方");
+            assert_eq!(
+                hit.0, key_lower,
+                "距离相等时必须稳定选 refno 小的那块，不能随 HashSet 顺序变"
+            );
+        }
     }
 
     // ---- 射线候选收集 ----
