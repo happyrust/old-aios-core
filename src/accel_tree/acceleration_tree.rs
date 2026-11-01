@@ -505,6 +505,18 @@ mod tests {
         }
     }
 
+    /// 指定 noun 和任意轴向范围的包围盒，用于射线相关用例。
+    fn bbox_at(noun: &str, refno_seq: u64, mins: [f32; 3], maxs: [f32; 3]) -> RStarBoundingBox {
+        RStarBoundingBox {
+            aabb: Aabb::new(
+                parry3d::math::Point::new(mins[0], mins[1], mins[2]),
+                parry3d::math::Point::new(maxs[0], maxs[1], maxs[2]),
+            ),
+            refno: RefU64((4000000001u64 << 32) | refno_seq),
+            noun: noun.to_string(),
+        }
+    }
+
     fn repeated_sync_elapsed(tree_size: u64, iterations: u64) -> std::time::Duration {
         let mut tree = AccelerationTree::load(
             (1..=tree_size)
@@ -684,6 +696,128 @@ mod tests {
         assert!(
             !tree.ids.contains(&bbox(1, 0.0, 10.0).refno),
             "replace 之后旧 refno 不该还挂在 ids 里"
+        );
+    }
+
+    // ---- 射线候选收集 ----
+    //
+    // `should_unpack_leaf` 只收集候选，真正的最近由 `query_nearest_by_ray` 的
+    // 三角网格精筛决定。下面几条钉住收集阶段的语义，防止有人再把它改回
+    // 「只留 AABB 最近的那一个」——那会让网格镂空的构件挤掉真实命中。
+
+    /// 沿 -Z 打的一条竖直射线，从 z=100 往下。
+    fn down_ray(x: f32, y: f32, z: f32) -> QueryRay {
+        let mut filter = HashSet::new();
+        filter.insert("FLOOR".to_string());
+        QueryRay::new(
+            Ray::new(
+                parry3d::math::Point::new(x, y, z),
+                parry3d::math::Vector::new(0.0, 0.0, -1.0),
+            ),
+            filter,
+            true,
+        )
+    }
+
+    /// 收集阶段必须把所有 AABB 命中的候选都留下，而不是只留最近的一个。
+    ///
+    /// 真库对应场景：起点 `(-9276.84, 10547.79, 1370)` 向 -Z，AABB 命中 8 个
+    /// FLOOR，最近那个（`24381_39652`）网格在该 (x,y) 镂空。旧实现只留它，
+    /// 精筛失败后整条查询返回 None。
+    #[test]
+    fn ray_collects_every_aabb_candidate_not_just_the_nearest() {
+        let mut tree = AccelerationTree::default();
+        // 三层楼板，z 从高到低：越靠上 toi 越小。
+        tree.update_aabbs(vec![
+            bbox_at("FLOOR", 1, [-10.0, -10.0, 900.0], [10.0, 10.0, 1000.0]),
+            bbox_at("FLOOR", 2, [-10.0, -10.0, -400.0], [10.0, 10.0, 940.0]),
+            bbox_at("FLOOR", 3, [-10.0, -10.0, -1700.0], [10.0, 10.0, -20.0]),
+        ]);
+
+        let qr = down_ray(0.0, 0.0, 1370.0);
+        let hits = tree
+            .tree
+            .locate_with_selection_function(&qr)
+            .collect::<Vec<_>>();
+        let cands: HashSet<RefnoEnum> = qr.min_refnos.borrow().iter().copied().collect();
+
+        assert_eq!(hits.len(), 3, "三层楼板都该被 AABB 命中");
+        assert_eq!(
+            cands.len(),
+            3,
+            "收集阶段必须保留全部 3 个候选，实际只留下 {} 个：{cands:?}",
+            cands.len()
+        );
+    }
+
+    /// 只命中一个时仍然要收进来（防止「不再 clear」改成「干脆不收」）。
+    #[test]
+    fn ray_collects_the_single_candidate() {
+        let mut tree = AccelerationTree::default();
+        tree.update_aabbs(vec![bbox_at(
+            "FLOOR",
+            1,
+            [-10.0, -10.0, -100.0],
+            [10.0, 10.0, 0.0],
+        )]);
+
+        let qr = down_ray(0.0, 0.0, 100.0);
+        let _ = tree
+            .tree
+            .locate_with_selection_function(&qr)
+            .collect::<Vec<_>>();
+        let cands = qr.min_refnos.borrow().len();
+        assert_eq!(cands, 1, "单个候选也必须被收集");
+    }
+
+    /// noun 不在 filter 里的构件不能被收集。
+    #[test]
+    fn ray_skips_nouns_outside_the_filter() {
+        let mut tree = AccelerationTree::default();
+        tree.update_aabbs(vec![
+            bbox_at("WALL", 1, [-10.0, -10.0, -100.0], [10.0, 10.0, 0.0]),
+            bbox_at("EQUI", 2, [-10.0, -10.0, -200.0], [10.0, 10.0, -150.0]),
+        ]);
+
+        let qr = down_ray(0.0, 0.0, 100.0);
+        let _ = tree
+            .tree
+            .locate_with_selection_function(&qr)
+            .collect::<Vec<_>>();
+        let cands = qr.min_refnos.borrow().len();
+        assert_eq!(cands, 0, "filter 只留 FLOOR，WALL/EQUI 不该进候选集");
+    }
+
+    /// 射线背对构件时不收集。
+    #[test]
+    fn ray_pointing_away_collects_nothing() {
+        let mut tree = AccelerationTree::default();
+        tree.update_aabbs(vec![bbox_at(
+            "FLOOR",
+            1,
+            [-10.0, -10.0, -100.0],
+            [10.0, 10.0, 0.0],
+        )]);
+
+        // 楼板在 z=[-100,0]，起点在 z=500（楼板上方）朝 +Z 打——背对楼板。
+        let mut filter = HashSet::new();
+        filter.insert("FLOOR".to_string());
+        let qr = QueryRay::new(
+            Ray::new(
+                parry3d::math::Point::new(0.0, 0.0, 500.0),
+                parry3d::math::Vector::new(0.0, 0.0, 1.0),
+            ),
+            filter,
+            true,
+        );
+        let _ = tree
+            .tree
+            .locate_with_selection_function(&qr)
+            .collect::<Vec<_>>();
+        assert_eq!(
+            qr.min_refnos.borrow().len(),
+            0,
+            "背对楼板时不该收集到候选"
         );
     }
 }
