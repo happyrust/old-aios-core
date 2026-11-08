@@ -903,6 +903,25 @@ pub async fn query_neareast_by_pos_dir(
     nearest
 }
 
+/// 一批点同时向 -Z 打射线找最近的目标构件，一次 R-tree 粗筛 + 逐点精筛。
+///
+/// 设备 / 阀门底面探测动辄几十到两百多个点，逐点调 [`query_neareast_by_pos_dir`] 会让每个
+/// 点各读一次 `GLOBAL_AABB_TREE`、各扫一次 R-tree。这里合成一次。
+///
+/// 返回与 `points` 等长的向量，每格是该点最近的 `(refno, 距离)`；`None` 表示该点正下方
+/// 没有网格命中（脚下确实没目标，或网格在该 (x,y) 处镂空）。
+pub async fn query_neareast_below_points(
+    points: &[Vec3],
+    target_type: &str,
+) -> anyhow::Result<Vec<Option<(RefnoEnum, f32)>>> {
+    if points.is_empty() {
+        return Ok(Vec::new());
+    }
+    let filter = HashSet::from([target_type.to_string()]);
+    let rtree = GLOBAL_AABB_TREE.read().await;
+    rtree.query_nearest_below(points, &filter).await
+}
+
 /// 查询指定节点的包围盒，需要遍历子节点的所有包围盒, 如果是含有负实体的，取父节点的包围盒
 /// 负实体的邻居节点如果是正实体，可能也要考虑在内
 /// 还有种情况就是图形平台的包围盒？是需要去查询所有子节点的包围盒的

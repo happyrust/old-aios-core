@@ -6,8 +6,8 @@ use bevy_ecs::prelude::Resource;
 use dashmap::DashMap;
 use dashmap::mapref::one::Ref;
 use glam::{Mat4, Vec3};
-use parry3d::bounding_volume::Aabb;
-use parry3d::query::{Ray, RayCast};
+use parry3d::bounding_volume::{Aabb, BoundingVolume};
+use parry3d::query::{Ray, RayCast, RayIntersection};
 use parry3d::shape::TriMesh;
 use parry3d::shape::TriMeshFlags;
 use rstar::Envelope;
@@ -128,6 +128,15 @@ pub struct QueryRay {
     /// `if refnos.is_empty() { return Ok(None) }` 因此每次都命中，
     /// **射线查询永远返回 None**——树搜索和几何求交都正常，只是结果没被存下来。
     pub min_refnos: RefCell<HashSet<RefnoEnum>>,
+    /// 候选的合并盒，随收集一并记下。
+    ///
+    /// 精筛阶段的嵌入判定要用候选自己的盒，但**不能**回头查 `entries_of`：快照装载
+    /// （`bincode::deserialize`）后 `refno_index` 是空的（`#[serde(skip)]`），
+    /// `entries_of` 会退化成遍历整棵树。1165 台设备 × 几十个候选 × 31 万条目，
+    /// 真库实测直接把全量重算从几十秒拖到 15 分钟以上。
+    ///
+    /// 收集阶段本来就把每条命中的 `RStarBoundingBox` 拿在手上，顺手合并成本为零。
+    pub min_aabbs: RefCell<HashMap<RefnoEnum, Aabb>>,
 }
 
 impl QueryRay {
@@ -139,10 +148,71 @@ impl QueryRay {
             // found: Cell::new(false),
             min_dist: Cell::new(f32::MAX),
             min_refnos: RefCell::new(HashSet::default()),
+            min_aabbs: RefCell::new(HashMap::default()),
             solid,
         }
     }
 }
+
+/// 沿 `dir` 从 `origin` 到 AABB 出射面的距离（射线方向上的剩余盒厚）。`dir` 为 0 的轴不参与。
+fn aabb_exit_distance(aabb: &Aabb, origin: glam::Vec3, dir: glam::Vec3) -> f32 {
+    let mut exit = f32::MAX;
+    let axes = [
+        (origin.x, dir.x, aabb.mins.x, aabb.maxs.x),
+        (origin.y, dir.y, aabb.mins.y, aabb.maxs.y),
+        (origin.z, dir.z, aabb.mins.z, aabb.maxs.z),
+    ];
+    for (o, d, min, max) in axes {
+        if d > 0.0 {
+            exit = exit.min((max - o) / d);
+        } else if d < 0.0 {
+            exit = exit.min((min - o) / d);
+        }
+    }
+    exit
+}
+
+/// 命中距离修正：起点落在候选构件 AABB 内、且命中点就在该盒的**出射面**上时，说明射线
+/// 是穿过实体打到远端的（设备支腿嵌进楼板、或底面正压在板厚范围里），算出来的 `toi` 是
+/// 「盒厚 − 嵌入深度」，不是净距——按贴面 0 算。
+///
+/// `RAY_BACKOFF_MM = 1.0` 只吸收 ≤1mm 的微嵌：嵌入更深时退 1mm 后起点仍在板内，`-Z`
+/// 射线会命中楼板**底面**，算出「板厚 − 嵌入深度」。真库这类支腿插进楼板的设备会连到
+/// 明显偏大的假距离上。
+///
+/// 判据用「命中点 ≈ AABB 出射面」而不是命中面法向：parry 的
+/// `cast_local_ray_and_get_normal` 返回的法向已被翻到**面向射线来向**（`normal·dir < 0`
+/// 恒成立），拿它判外法向恒为假。出射面判据同时挡住另一种误判——斜置楼板的 AABB 会
+/// 膨胀，起点可能落在膨胀盒内却仍在实体外，那时 `toi` 明显小于出射距离，保留真实净距。
+///
+/// `origin` 必须是**未后退**的原始起点：退过之后起点可能已经挪进盒内，会把「本来贴在
+/// 板面上方 0.5mm」也当成内部穿越。`backoff` 单独给出，只用于把退出去的那段减回来。
+fn corrected_toi(
+    intersection: &RayIntersection,
+    origin: glam::Vec3,
+    aabb: &Aabb,
+    dir: glam::Vec3,
+    backoff: f32,
+) -> f32 {
+    let raw = (intersection.time_of_impact - backoff).max(0.0);
+    let inside = origin.x >= aabb.mins.x
+        && origin.x <= aabb.maxs.x
+        && origin.y >= aabb.mins.y
+        && origin.y <= aabb.maxs.y
+        && origin.z >= aabb.mins.z
+        && origin.z <= aabb.maxs.z;
+    if !inside {
+        return raw;
+    }
+    let exit = aabb_exit_distance(aabb, origin, dir);
+    // 容差与回退量同量级：出射面判定本身有浮点误差，但远小于任何真实净距。
+    if raw + RAY_BACKOFF_MM >= exit {
+        0.0
+    } else {
+        raw
+    }
+}
+
 
 impl rstar::SelectionFunction<RStarBoundingBox> for &QueryRay {
     //如果找到了最近的，应该停止继续搜索
@@ -186,9 +256,13 @@ impl rstar::SelectionFunction<RStarBoundingBox> for &QueryRay {
                 if toi < self.min_dist.get() {
                     self.min_dist.set(toi);
                 }
-                self.min_refnos
+                let refno: RefnoEnum = bbox.refno.into();
+                self.min_refnos.borrow_mut().insert(refno);
+                self.min_aabbs
                     .borrow_mut()
-                    .insert(bbox.refno.into());
+                    .entry(refno)
+                    .and_modify(|merged| merged.merge(&bbox.aabb))
+                    .or_insert(bbox.aabb);
                 return true;
             }
         }
@@ -504,6 +578,9 @@ impl AccelerationTree {
         } else {
             0.0
         };
+        // 嵌入判定要用**未后退**的起点：退过之后起点可能已经挪进楼板盒内，
+        // 会把「本来贴在板面上方 0.5mm」也当成内部穿越。
+        let query_origin = ray.ray.origin;
         ray.ray.origin -= ray.ray.dir * backoff;
         let _ = self
             .tree
@@ -514,6 +591,9 @@ impl AccelerationTree {
         if refnos.is_empty() {
             return Ok(None);
         }
+        // 候选盒也一并借出来：嵌入判定要用，回头查 `entries_of` 在快照装载的进程里
+        // 会退化成遍历整棵树（见 `min_aabbs` 的说明）。
+        let candidate_aabbs: HashMap<RefnoEnum, Aabb> = ray.min_aabbs.borrow().clone();
         //检查是否真的和ray相交, 根据 profile 判断吗？
         //根据 param 判断是否相交吗？
         //直接检查是否在表面上即可
@@ -533,6 +613,11 @@ impl AccelerationTree {
             let Some(tri_meshes) = self.get_tri_mesh(refno).await else {
                 continue;
             };
+            // 嵌入判定要拿构件自己的盒：起点在盒内、命中点是出射面时，说明起点已经在
+            // 实体里（支腿插进楼板），算出来的 toi 是「盒厚 − 嵌入深度」。
+            let aabb = candidate_aabbs.get(&refno).copied();
+            let origin = glam::Vec3::new(query_origin.x, query_origin.y, query_origin.z);
+            let dir = glam::Vec3::new(ray.ray.dir.x, ray.ray.dir.y, ray.ray.dir.z);
             for mesh in tri_meshes.value() {
                 let Some(intersection) =
                     mesh.cast_local_ray_and_get_normal(&ray.ray, 10_0000.0, ray.solid)
@@ -540,13 +625,166 @@ impl AccelerationTree {
                     continue;
                 };
                 // 减回退出去的那一段；起点本来就在面后不到 1mm 时会略小于 0，按贴面算。
-                let toi = (intersection.time_of_impact - backoff).max(0.0);
+                let toi = match aabb {
+                    Some(ref aabb) => corrected_toi(&intersection, origin, aabb, dir, backoff),
+                    None => (intersection.time_of_impact - backoff).max(0.0),
+                };
                 if best.is_none_or(|(winner, d)| toi < d || (toi == d && refno < winner)) {
                     best = Some((refno, toi));
                 }
             }
         }
         return Ok(best);
+    }
+
+    /// 一批点同时向 `-Z` 打射线，一次包络粗筛后逐点精筛，返回每点各自的最近目标。
+    ///
+    /// 设备底面探测要打几十到几百条同向射线（4 角 + 底面中心，逐子件）。逐条调
+    /// [`Self::query_nearest_by_ray`] 意味着每条一次 R-tree 遍历；这里改成一次
+    /// `locate_in_envelope_intersecting`：xy 取全部点的包围盒、z 从世界底到最高点，
+    /// 该包络是所有 `-Z` 射线的超集（`-Z` 射线的 xy 恒定），不会漏候选。
+    ///
+    /// 返回与 `points` 等长的向量，每格是该点最近的 `(refno, 距离)`；`None` 表示该点
+    /// 正下方没有网格命中（脚下确实没目标，或网格在该 (x,y) 处镂空）。
+    pub async fn query_nearest_below(
+        &self,
+        points: &[glam::Vec3],
+        filter_nouns: &HashSet<String>,
+    ) -> anyhow::Result<Vec<Option<(RefnoEnum, f32)>>> {
+        self.query_nearest_below_bounded(points, filter_nouns, None)
+            .await
+    }
+
+    /// [`Self::query_nearest_below`] 带初始上界：只报**严格优于** `bound` 的命中。
+    ///
+    /// `bound` 是调用方已经拿到的候选距离（例如合并盒四角的结果）。传进来有两个作用：
+    ///
+    /// 1. **剪枝**：每个点一开始就有 `best = bound`，下界剪枝立刻生效，不必先扫完一圈
+    ///    才建立最优值。设备底面探测里绝大多数子件点比合并盒那一级更远，这一层能把
+    ///    无效网格求交砍掉大半。
+    /// 2. **语义**：返回 `Some` 就是「这一点比调用方已有的更近」，返回 `None` 就是
+    ///    「没有改进」，调用方不必再自己比一遍。
+    ///
+    /// 精筛有三层剪枝，缺一层都会让设备全量重算从几十秒涨到几分钟：
+    ///
+    /// 1. **xy 剪枝**：`-Z` 射线的 xy 恒定，候选 AABB 不含该 (x,y) 就必然打不中。
+    /// 2. **上下剪枝**：候选整体在点之上（`mins.z > pt.z`）打不中；候选顶面已在
+    ///    「当前最优距离」之下（`maxs.z <= pt.z - best`）也不可能更近。候选按顶面 z
+    ///    降序排好，后一条一旦成立，后面的全部更低，直接 `break`。
+    /// 3. **同距定序**：距离相等时取 refno 小的，保证同一台设备重跑连到同一块楼板。
+    pub async fn query_nearest_below_bounded(
+        &self,
+        points: &[glam::Vec3],
+        filter_nouns: &HashSet<String>,
+        bound: Option<(RefnoEnum, f32)>,
+    ) -> anyhow::Result<Vec<Option<(RefnoEnum, f32)>>> {
+        let mut hits = vec![None; points.len()];
+        if points.is_empty() || filter_nouns.is_empty() {
+            return Ok(hits);
+        }
+        let mut lo = glam::Vec3::splat(f32::MAX);
+        let mut hi = glam::Vec3::splat(f32::MIN);
+        for pt in points {
+            lo = lo.min(*pt);
+            hi = hi.max(*pt);
+        }
+        let envelope = Aabb::new(
+            parry3d::math::Point::new(lo.x, lo.y, f32::MIN),
+            parry3d::math::Point::new(hi.x, hi.y, hi.z),
+        );
+        // 候选按顶面 z 降序：精筛的下界剪枝依赖这个顺序。
+        let mut candidates: Vec<(RefnoEnum, Aabb)> = Vec::new();
+        let mut merged: HashMap<RefnoEnum, Aabb> = HashMap::new();
+        for entry in self.locate_intersecting_bounds(&envelope) {
+            if !filter_nouns.contains(&entry.noun) {
+                continue;
+            }
+            let refno = RefnoEnum::from(entry.refno);
+            // 同一 refno 的多条条目（历史堆叠）合并成一个盒。
+            merged
+                .entry(refno)
+                .and_modify(|box_| box_.merge(&entry.aabb))
+                .or_insert(entry.aabb);
+        }
+        for (refno, aabb) in merged {
+            candidates.push((refno, aabb));
+        }
+        if candidates.is_empty() {
+            return Ok(hits);
+        }
+        candidates.sort_by(|a, b| b.1.maxs.z.total_cmp(&a.1.maxs.z));
+
+        for (index, pt) in points.iter().enumerate() {
+            let dir = glam::Vec3::NEG_Z;
+            // 与 `query_nearest_by_ray` 同口径：起点先沿反方向退 `RAY_BACKOFF_MM`，
+            // 命中距离再减回去，贴面才算得到 0。
+            let origin = *pt - dir * RAY_BACKOFF_MM;
+            let ray = Ray::new(origin.into(), dir.into());
+            let mut best = bound;
+            for (refno, aabb) in &candidates {
+                // 整体在点之上：-Z 射线打不中。
+                if aabb.mins.z > pt.z {
+                    continue;
+                }
+                if let Some((winner, d)) = best {
+                    // 顶面已在「当前最优」之下：不可能更近，后面的候选只会更低。
+                    // 严格不等号保住了同距时按 refno 定序的那条。
+                    if aabb.maxs.z < pt.z - d || (aabb.maxs.z == pt.z - d && *refno > winner) {
+                        break;
+                    }
+                }
+                // xy 不含该点：竖直射线必然打不中，连网格都不用取。
+                if pt.x < aabb.mins.x
+                    || pt.x > aabb.maxs.x
+                    || pt.y < aabb.mins.y
+                    || pt.y > aabb.maxs.y
+                {
+                    continue;
+                }
+                let Some(tri_meshes) = self.get_tri_mesh(*refno).await else {
+                    continue;
+                };
+                for mesh in tri_meshes.value() {
+                    let Some(intersection) =
+                        mesh.cast_local_ray_and_get_normal(&ray, 10_0000.0, true)
+                    else {
+                        continue;
+                    };
+                    let toi = corrected_toi(&intersection, origin, aabb, dir, RAY_BACKOFF_MM);
+                    if best.is_none_or(|(winner, d)| toi < d || (toi == d && *refno < winner)) {
+                        best = Some((*refno, toi));
+                    }
+                }
+            }
+            // 只报改进：等于上界的不算（调用方已经有了）。
+            hits[index] = match (best, bound) {
+                (Some(found), Some(initial)) => {
+                    (found.1 < initial.1 || (found.1 == initial.1 && found.0 < initial.0))
+                        .then_some(found)
+                }
+                (found, None) => found,
+                (None, Some(_)) => None,
+            };
+        }
+        Ok(hits)
+    }
+
+    /// 某个 refno 在树上的全部条目的合并盒；不在树上时为 `None`。
+    ///
+    /// **不要在热路径里用**：快照装载（`bincode::deserialize`）后 `refno_index` 是空的，
+    /// `entries_of` 会退化成遍历整棵树。射线与批量查询都改从收集阶段顺手取盒
+    /// （`QueryRay::min_aabbs` / `locate_intersecting_bounds`），不再走这里。
+    #[allow(dead_code)]
+    fn merged_aabb(&self, refno: RefnoEnum) -> Option<Aabb> {
+        let entries = self.entries_of(refno.refno());
+        if entries.is_empty() {
+            return None;
+        }
+        let mut merged = Aabb::new_invalid();
+        for entry in entries.iter() {
+            merged.merge(&entry.aabb);
+        }
+        Some(merged)
     }
 }
 
@@ -1004,5 +1242,207 @@ mod tests {
             0,
             "背对楼板时不该收集到候选"
         );
+    }
+
+    // ---- 嵌入 >1mm 的防穿板 ----
+    //
+    // `RAY_BACKOFF_MM = 1.0` 只吸收 ≤1mm 的微嵌。支腿插进楼板 >1mm 时，退 1mm 后起点
+    // 仍在板内，`-Z` 射线命中楼板**底面**（外法向与射线同向），算出来是「板厚 − 嵌入
+    // 深度」，一个与真实净距无关的假值。`corrected_toi` 用「起点在盒内 + 法向与射线
+    // 同向」把这种情况归零。
+
+    /// z=[-200,0] 的实心块（上下两个面 + 四周），供嵌入用例打穿。
+    fn tree_with_solid_block(refno_seq: u64) -> (AccelerationTree, RefnoEnum) {
+        let plate = bbox_at("FLOOR", refno_seq, [-10.0, -10.0, -200.0], [10.0, 10.0, 0.0]);
+        let key: RefnoEnum = plate.refno.into();
+        let tree = AccelerationTree::load(vec![plate]);
+        let p = |x: f32, y: f32, z: f32| parry3d::math::Point::new(x, y, z);
+        let mesh = TriMesh::with_flags(
+            vec![
+                p(-10.0, -10.0, 0.0),
+                p(10.0, -10.0, 0.0),
+                p(10.0, 10.0, 0.0),
+                p(-10.0, 10.0, 0.0),
+                p(-10.0, -10.0, -200.0),
+                p(10.0, -10.0, -200.0),
+                p(10.0, 10.0, -200.0),
+                p(-10.0, 10.0, -200.0),
+            ],
+            vec![
+                // 顶面，法向 +Z
+                [0, 1, 2],
+                [0, 2, 3],
+                // 底面，法向 -Z
+                [4, 6, 5],
+                [4, 7, 6],
+            ],
+            TriMeshFlags::default(),
+        );
+        tree.mesh_cache.insert(key, vec![mesh]);
+        (tree, key)
+    }
+
+    /// 起点嵌进楼板 5mm（> RAY_BACKOFF_MM）：净距按贴面算 0，不能返回「板厚 − 嵌入」。
+    #[test]
+    fn deeply_embedded_origin_is_treated_as_flush() {
+        let (tree, key) = tree_with_solid_block(1);
+        let hit = futures::executor::block_on(tree.query_nearest_by_ray(down_ray(0.0, 0.0, -5.0)))
+            .unwrap()
+            .expect("起点在板内，射线必须命中");
+        assert_eq!(hit.0, key);
+        assert!(
+            hit.1.abs() < 1e-3,
+            "嵌入 5mm 应按贴面 0 算，实际 {}（旧实现会返回约 195）",
+            hit.1
+        );
+    }
+
+    /// 起点在楼板**下方**、射线朝下（背对楼板）：不该命中，更不能因为法向判定被算成 0。
+    #[test]
+    fn origin_below_the_slab_does_not_hit_it() {
+        let (tree, _) = tree_with_solid_block(1);
+        let hit = futures::executor::block_on(tree.query_nearest_by_ray(down_ray(0.0, 0.0, -300.0)))
+            .unwrap();
+        assert!(hit.is_none(), "楼板在上方，-Z 射线不该命中它");
+    }
+
+    /// 起点在板面上方 100：正常返回 100，嵌入修正不能把外部命中误归零。
+    #[test]
+    fn origin_above_the_slab_keeps_the_real_gap() {
+        let (tree, key) = tree_with_solid_block(1);
+        let hit = futures::executor::block_on(tree.query_nearest_by_ray(down_ray(0.0, 0.0, 100.0)))
+            .unwrap()
+            .expect("正上方 100 处有楼板");
+        assert_eq!(hit.0, key);
+        assert!(
+            (hit.1 - 100.0).abs() < 1e-3,
+            "外部命中距离必须是 100，实际 {}",
+            hit.1
+        );
+    }
+
+    /// 起点在 AABB 内但**不在实体里**（斜置 / 异形构件让 AABB 膨胀，或盒内是空的）时，
+    /// 命中点是近面而不是出射面，必须保留真实净距，不能被嵌入修正误归零。
+    ///
+    /// 真库对应场景：斜置楼板的 AABB 比实体大得多，设备底面落在膨胀盒内却仍在板外。
+    #[test]
+    fn origin_inside_the_aabb_but_outside_the_solid_keeps_the_gap() {
+        // 大盒 z=[-1000, 0]，里面只有一片 z=-900 的水平面（盒内上方是空的）。
+        let plate = bbox_at("FLOOR", 1, [-10.0, -10.0, -1000.0], [10.0, 10.0, 0.0]);
+        let key: RefnoEnum = plate.refno.into();
+        let tree = AccelerationTree::load(vec![plate]);
+        let p = |x: f32, y: f32, z: f32| parry3d::math::Point::new(x, y, z);
+        let mesh = TriMesh::with_flags(
+            vec![
+                p(-10.0, -10.0, -900.0),
+                p(10.0, -10.0, -900.0),
+                p(10.0, 10.0, -900.0),
+                p(-10.0, 10.0, -900.0),
+            ],
+            vec![[0, 1, 2], [0, 2, 3]],
+            TriMeshFlags::default(),
+        );
+        tree.mesh_cache.insert(key, vec![mesh]);
+
+        // 起点在盒内（z=-100 落在 [-1000, 0]）、在实体上方 800。
+        let hit = futures::executor::block_on(tree.query_nearest_by_ray(down_ray(0.0, 0.0, -100.0)))
+            .unwrap()
+            .expect("正下方有三角面");
+        assert_eq!(hit.0, key);
+        assert!(
+            (hit.1 - 800.0).abs() < 1e-2,
+            "盒内但在实体外，真实净距 800 必须保留，实际 {}",
+            hit.1
+        );
+    }
+
+    // ---- 多点批量最近楼板 ----
+
+    /// 一批点共用一次 R-tree 遍历：每点各取自己正下方的最近楼板，互不串台。
+    #[test]
+    fn batch_query_returns_one_hit_per_point() {
+        let (tree, key) = tree_with_plate_at_z0(1, [-200.0, 0.0]);
+        let points = [
+            glam::Vec3::new(0.0, 0.0, 100.0),
+            glam::Vec3::new(5.0, 5.0, 300.0),
+            // 板外 30mm：板只有 20x20（x/y 各 [-10,10]），这里必然落空。
+            glam::Vec3::new(30.0, 0.0, 100.0),
+        ];
+        let mut filter = HashSet::new();
+        filter.insert("FLOOR".to_string());
+        let hits = futures::executor::block_on(tree.query_nearest_below(&points, &filter)).unwrap();
+
+        assert_eq!(hits.len(), 3, "每点一格结果");
+        assert_eq!(hits[0].map(|h| h.0), Some(key));
+        assert!((hits[0].unwrap().1 - 100.0).abs() < 1e-3, "{:?}", hits[0]);
+        assert_eq!(hits[1].map(|h| h.0), Some(key));
+        assert!((hits[1].unwrap().1 - 300.0).abs() < 1e-3, "{:?}", hits[1]);
+        assert!(hits[2].is_none(), "板外的点不该命中: {:?}", hits[2]);
+    }
+
+    /// 多点批量必须和单点逐条查询给出同样的结果（同一点集、同一棵树）。
+    #[test]
+    fn batch_query_agrees_with_single_point_queries() {
+        let (tree, _) = tree_with_plate_at_z0(1, [-200.0, 0.0]);
+        let points: Vec<glam::Vec3> = (0..5)
+            .map(|i| glam::Vec3::new(i as f32 * 2.0 - 4.0, 1.0, 50.0 + i as f32 * 40.0))
+            .collect();
+        let mut filter = HashSet::new();
+        filter.insert("FLOOR".to_string());
+
+        let batch = futures::executor::block_on(tree.query_nearest_below(&points, &filter)).unwrap();
+        for (index, pt) in points.iter().enumerate() {
+            let single = futures::executor::block_on(
+                tree.query_nearest_by_ray(down_ray(pt.x, pt.y, pt.z)),
+            )
+            .unwrap();
+            assert_eq!(
+                batch[index].map(|h| h.0),
+                single.map(|h| h.0),
+                "第 {index} 点的批量结果与单点结果不一致"
+            );
+            if let (Some(b), Some(s)) = (batch[index], single) {
+                assert!(
+                    (b.1 - s.1).abs() < 1e-3,
+                    "第 {index} 点距离不一致：批量 {} 单点 {}",
+                    b.1,
+                    s.1
+                );
+            }
+        }
+    }
+
+    /// 空点集 / 空 filter 必须直接返回空结果，不碰树。
+    #[test]
+    fn batch_query_handles_empty_inputs() {
+        let (tree, _) = tree_with_plate_at_z0(1, [-200.0, 0.0]);
+        let mut filter = HashSet::new();
+        filter.insert("FLOOR".to_string());
+        assert!(futures::executor::block_on(tree.query_nearest_below(&[], &filter))
+            .unwrap()
+            .is_empty());
+        assert!(
+            futures::executor::block_on(tree.query_nearest_below(
+                &[glam::Vec3::new(0.0, 0.0, 100.0)],
+                &HashSet::new()
+            ))
+            .unwrap()
+            .iter()
+            .all(Option::is_none)
+        );
+    }
+
+    /// 多点批量也要按 z 升序剪枝：下方没有候选的点不能被上方候选算成命中。
+    #[test]
+    fn batch_query_skips_candidates_above_the_point() {
+        // 楼板 z=[-200,0]；点在 z=-500（楼板下方）朝 -Z 打，应落空。
+        let (tree, _) = tree_with_plate_at_z0(1, [-200.0, 0.0]);
+        let mut filter = HashSet::new();
+        filter.insert("FLOOR".to_string());
+        let hits = futures::executor::block_on(
+            tree.query_nearest_below(&[glam::Vec3::new(0.0, 0.0, -500.0)], &filter),
+        )
+        .unwrap();
+        assert!(hits[0].is_none(), "楼板上方的候选不能算成命中: {:?}", hits[0]);
     }
 }
