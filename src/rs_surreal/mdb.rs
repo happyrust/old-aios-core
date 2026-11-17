@@ -44,7 +44,7 @@ pub async fn get_mdb_world_site_ele_nodes(
     let db_type: u8 = module.into();
     let sql = format!(
         r#"
-        let $dbnos = select value (select value DBNO from CURD.refno where STYP == {db_type}) from only MDB where NAME == "{mdb}" limit 1;
+        let $dbnos = select value (select value DBNO from CURD.refno where STYP = {db_type}) from only MDB where NAME == "{mdb}" limit 1;
         let $a = (select value id from (select REFNO.id as id, array::find_index($dbnos, REFNO.dbnum) as o from WORL where REFNO.dbnum in $dbnos order by o));
         select refno, noun, name, owner, array::len(select value in from <-pe_owner) as children_count from array::flatten(select value in from $a<-pe_owner) where noun='SITE';
         "#,
@@ -69,7 +69,7 @@ pub async fn create_mdb_world_site_pes_table(mdb: String, module: DBType) -> any
     let db_type: u8 = module.into();
     let mut response = SUL_DB
         .query(r#"
-            let $dbnos = select value (select value DBNO from CURD.refno where STYP=$db_type) from only MDB where NAME=$mdb limit 1;
+            let $dbnos = select value (select value DBNO from CURD.refno where STYP = $db_type) from only MDB where NAME=$mdb limit 1;
             let $a = (select value id from (select REFNO.id as id, array::find_index($dbnos, REFNO.dbnum) as o from WORL where REFNO.dbnum in $dbnos order by o));
             array::flatten(select value in.* from $a<-pe_owner[? in.noun='SITE'])
         "#)
@@ -196,7 +196,7 @@ pub async fn query_mdb_db_nums(module: DBType) -> anyhow::Result<Vec<u32>> {
     let mdb = crate::helper::to_e3d_name(mdb);
     let mut response = SUL_DB
         .query(r#"
-            let $dbnos = select value (select value DBNO from CURD.refno where STYP=$db_type) from only MDB where NAME=$mdb limit 1;
+            let $dbnos = select value (select value DBNO from CURD.refno where STYP = $db_type) from only MDB where NAME=$mdb limit 1;
             select value dbnum from (select REFNO.dbnum as dbnum, array::find_index($dbnos, REFNO.dbnum) as o
                 from WORL where REFNO.dbnum in $dbnos order by o);
         "#)
@@ -216,7 +216,7 @@ pub async fn get_mdb_world_site_pes(
     let db_type: u8 = module.into();
     let mut response = SUL_DB
         .query(r#"
-            let $dbnos = select value (select value DBNO from CURD.refno where STYP=$db_type) from only MDB where NAME=$mdb limit 1;
+            let $dbnos = select value (select value DBNO from CURD.refno where STYP = $db_type) from only MDB where NAME=$mdb limit 1;
             let $a = (select value id from (select REFNO.id as id, array::find_index($dbnos, REFNO.dbnum) as o from WORL where REFNO.dbnum in $dbnos order by o));
             array::flatten(select value in.* from $a<-pe_owner)[?noun = 'SITE']
         "#)
@@ -227,12 +227,64 @@ pub async fn get_mdb_world_site_pes(
     Ok(pe)
 }
 
+/// `DB.STYP` 是设计库类型，按整数存（1 = DESI，2 = CATA，…）。
+///
+/// 有的库把它写成了数字字符串，和整数比较会一条都匹配不到。连上库时调用本函数：
+/// 纯数字字符串改成整数；已经是整数则不写。不是纯数字的字符串留下并打印，
+/// 避免 `<int>` 遇到非数字时把整批更新打断。
+pub async fn repair_string_db_styp() -> anyhow::Result<usize> {
+    #[derive(Deserialize)]
+    struct CountRow {
+        n: usize,
+    }
+
+    let mut response = SUL_DB
+        .query(
+            r#"
+            SELECT count() AS n FROM DB
+            WHERE type::is::string(STYP) AND string::matches(STYP, "^[0-9]+$")
+            GROUP ALL;
+            SELECT id, STYP FROM DB
+            WHERE type::is::string(STYP) AND !string::matches(STYP, "^[0-9]+$");
+            "#,
+        )
+        .await
+        .map_err(|e| anyhow::anyhow!("检查 DB.STYP 类型失败: {e}"))?;
+    let convertible: Vec<CountRow> = response
+        .take(0)
+        .map_err(|e| anyhow::anyhow!("读取 DB.STYP 字符串条数失败: {e}"))?;
+    let leftover: Vec<serde_json::Value> = response
+        .take(1)
+        .map_err(|e| anyhow::anyhow!("读取无法转换的 DB.STYP 失败: {e}"))?;
+    let convertible = convertible.first().map(|row| row.n).unwrap_or(0);
+
+    if convertible > 0 {
+        SUL_DB
+            .query(
+                r#"
+                UPDATE DB SET STYP = <int>STYP
+                WHERE type::is::string(STYP) AND string::matches(STYP, "^[0-9]+$");
+                "#,
+            )
+            .await
+            .map_err(|e| anyhow::anyhow!("把 DB.STYP 从字符串改成整数失败: {e}"))?;
+        println!("DB.STYP：{convertible} 条数字字符串已改为整数");
+    }
+    if !leftover.is_empty() {
+        println!(
+            "DB.STYP：仍有 {} 条不是整数也不是纯数字字符串，未改：{leftover:?}",
+            leftover.len()
+        );
+    }
+    Ok(convertible)
+}
+
 /// Represents the response obtained from the database query.
 #[cached(result = true)]
 pub async fn get_world(mdb: String) -> anyhow::Result<Option<SPdmsElement>> {
     let sql = format!(
         " \
-            let $f = (select value (select value DBNO from CURD.refno where STYP=1) from only MDB where NAME='{}' limit 1)[0]; \
+            let $f = (select value (select value DBNO from CURD.refno where STYP = 1) from only MDB where NAME='{}' limit 1)[0]; \
             (select value REFNO.* from WORL where REFNO.dbnum=$f and REFNO.noun='WORL' limit 1)[0]",
         mdb
     );
@@ -251,7 +303,7 @@ pub async fn get_world_refno(mdb: String) -> anyhow::Result<RefnoEnum> {
     };
     let sql = format!(
         " \
-            let $f = (select value (select value DBNO from CURD.refno where STYP=1) from only MDB where NAME='{}' limit 1)[0]; \
+            let $f = (select value (select value DBNO from CURD.refno where STYP = 1) from only MDB where NAME='{}' limit 1)[0]; \
             (select value REFNO from WORL where REFNO.dbnum=$f and REFNO.noun='WORL' limit 1)[0]",
         mdb_name
     );

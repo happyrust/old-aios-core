@@ -248,6 +248,11 @@ pub async fn init_test_surreal() -> Result<DbOption, HandleError> {
         .map_err(|e| HandleError::SurrealError {
             msg: format!("Failed to define common functions: {}", e),
         })?;
+    rs_surreal::mdb::repair_string_db_styp()
+        .await
+        .map_err(|e| HandleError::SurrealError {
+            msg: format!("DB.STYP 修正失败: {e}"),
+        })?;
 
     Ok(db_option)
 }
@@ -280,6 +285,7 @@ pub async fn init_surreal() -> anyhow::Result<()> {
         .map_err(|e| HandleError::SurrealError {
             msg: format!("Failed to define common functions: {}", e),
         })?;
+    rs_surreal::mdb::repair_string_db_styp().await?;
     Ok(())
 }
 
@@ -371,6 +377,11 @@ pub async fn init_demo_test_surreal() -> Result<DbOption, HandleError> {
         .await
         .map_err(|e| HandleError::SurrealError {
             msg: format!("Failed to define common functions: {}", e),
+        })?;
+    rs_surreal::mdb::repair_string_db_styp()
+        .await
+        .map_err(|e| HandleError::SurrealError {
+            msg: format!("DB.STYP 修正失败: {e}"),
         })?;
 
     Ok(db_option)

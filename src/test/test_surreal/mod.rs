@@ -10,6 +10,8 @@ use surrealdb::opt::auth::Root;
 
 pub mod test_basic_query;
 
+pub mod test_styp;
+
 // pub mod test_query_group;
 
 // pub mod test_graph;
